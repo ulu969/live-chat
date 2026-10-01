@@ -1,0 +1,53 @@
+---
+import App from '../layouts/App.astro';
+import { COOKIE, getUser } from '../lib/users';
+
+// Already joined on this browser? Go straight in.
+const existing = await getUser(Astro.cookies.get(COOKIE)?.value);
+if (existing && existing.id !== 'system') return Astro.redirect('/rooms/lobby');
+
+const error = Astro.url.searchParams.get('error');
+const nickname = Astro.url.searchParams.get('nickname') ?? '';
+---
+
+<App title="Join the chat">
+  <main class="grid min-h-full place-items-center px-4 py-12">
+    <div class="w-full max-w-sm">
+      <div class="mb-8 flex items-center gap-3">
+        <img src="/favicon.svg" alt="" class="size-10" />
+        <h1 class="font-display text-3xl font-bold tracking-tight">Live Chat</h1>
+      </div>
+      <p class="mb-6 text-ink-soft">
+        Pick a nickname to join the Lobby. No password needed — this browser will remember you for 30 days.
+      </p>
+
+      <form method="post" action="/api/join" class="space-y-3">
+        <label for="nickname" class="block text-sm font-medium">Nickname</label>
+        <input
+          id="nickname"
+          name="nickname"
+          value={nickname}
+          required
+          minlength="2"
+          maxlength="24"
+          autocomplete="nickname"
+          autofocus
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? 'join-error' : undefined}
+          class="w-full rounded-lg border border-line bg-panel px-3.5 py-2.5 text-base outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          placeholder="e.g. alice"
+        />
+        {error && (
+          <p id="join-error" class="text-sm text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          class="w-full rounded-lg bg-accent px-4 py-2.5 font-semibold text-accent-ink hover:brightness-110 active:brightness-95"
+        >
+          Join the Lobby
+        </button>
+      </form>
+    </div>
+  </main>
+</App>

@@ -1,0 +1,48 @@
+{
+  "name": "live-chat",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "start": "node --env-file-if-exists=.env ./dist/server/entry.mjs",
+    "db:up": "docker compose up -d --wait db",
+    "db:down": "docker compose down",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "db:seed": "node --env-file-if-exists=.env scripts/seed.mjs",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "check": "astro check",
+    "db:check": "node --env-file-if-exists=.env scripts/db-check.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "dependencies": {
+    "@astrojs/node": "^10.1.4",
+    "@tailwindcss/vite": "^4.3.3",
+    "alpinejs": "^3.17.4",
+    "astro": "^6.4.8",
+    "drizzle-orm": "^0.45.3",
+    "htmx-ext-sse": "^2.2.4",
+    "htmx.org": "^2.0.11",
+    "nanoid": "^6.0.1",
+    "postgres": "^3.4.9",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@playwright/test": "^1.63.0",
+    "@types/alpinejs": "^3.17.0",
+    "@types/node": "^22.20.4",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "vite": "^7.3.6"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

@@ -1,0 +1,198 @@
+---
+import App from '../../layouts/App.astro';
+import Sidebar from '../../components/Sidebar.astro';
+import { getRoom, listRooms } from '../../lib/rooms';
+import { listMessages } from '../../lib/messages';
+import { renderHistoryPage, renderOnlineCount, renderTyping, renderUserList } from '../../lib/render';
+import { counts, online } from '../../lib/presence';
+import { typists } from '../../lib/typing';
+
+const user = Astro.locals.user;
+const room = await getRoom(Astro.params.id!);
+if (!room) return Astro.redirect('/rooms/lobby');
+
+const [rooms, history] = await Promise.all([listRooms(), listMessages(room.id)]);
+
+// Live state at render time. This person joins when their live connection opens,
+// which immediately pushes fresh presence to everyone (including them).
+// Count this person from the first render (their connection opens a moment later),
+// so the header never starts at "0 online".
+const present = online(room.id);
+const isPresent = present.some((p) => p.id === user.id);
+const people = isPresent
+  ? present
+  : [...present, { id: user.id, nickname: user.nickname, color: user.color }].sort((a, b) =>
+      a.nickname.localeCompare(b.nickname, undefined, { sensitivity: 'base' }),
+    );
+const roomCounts = { ...counts(), [room.id]: people.length };
+
+// Where the live connection resumes from: render time, minus a little for clock skew
+// between this server and the database. Duplicates are dropped by the client.
+const renderedAt = Date.now() - 2000;
+---
+
+<App title={`#${room.name} · Live Chat`}>
+  <!-- One live connection per room page; it feeds both the sidebar and the chat -->
+  <div
+    id="live"
+    data-since={renderedAt}
+    class="flex h-dvh overflow-hidden"
+    data-me={user.id}
+    hx-ext="sse"
+    sse-connect={`/api/rooms/${room.id}/stream`}
+  >
+    <Sidebar rooms={rooms} currentId={room.id} user={user} counts={roomCounts} />
+
+    <main id="chat" class="flex min-w-0 flex-1 flex-col bg-panel">
+      <header class="flex h-14 shrink-0 items-center gap-3 border-b border-line px-3 md:px-4">
+        <a href="/rooms" class="-ml-1 rounded-md p-2 text-ink-soft hover:bg-hover md:hidden" aria-label="Back to rooms">
+          <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"
+            ><path d="M15 18l-6-6 6-6"></path></svg
+          >
+        </a>
+        <div class="min-w-0 flex-1">
+          <h1 class="truncate font-display text-lg leading-tight font-bold tracking-tight">
+            <span class="text-ink-soft">#</span>{room.name}
+          </h1>
+          {room.description && <p class="truncate text-xs text-ink-soft">{room.description}</p>}
+        </div>
+
+        <!-- Who's online: count in the header, list in a popover -->
+        <div class="relative" x-data="{ open: false }" @keydown.escape.window="open = false">
+          <button
+            type="button"
+            @click="open = !open"
+            :aria-expanded="open"
+            aria-expanded="false"
+            aria-controls="online-panel"
+            id="online-count"
+            sse-swap="presence"
+            class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-ink-soft hover:bg-hover hover:text-ink"
+            set:html={renderOnlineCount(people.length)}
+          />
+          <div
+            id="online-panel"
+            x-show="open"
+            x-cloak
+            x-transition.opacity.duration.100ms
+            @click.outside="open = false"
+            class="absolute right-0 z-20 mt-1 w-60 overflow-hidden rounded-lg border border-line bg-panel py-1 shadow-lg"
+          >
+            <p class="px-3 pt-1.5 pb-1 text-xs font-medium text-ink-soft">In #{room.name} now</p>
+            <ul id="online-list" sse-swap="userlist" class="max-h-72 overflow-y-auto" set:html={renderUserList(people, user.id)} />
+          </div>
+        </div>
+      </header>
+
+      <div id="scroller" class="min-h-0 flex-1 overflow-y-auto">
+        <div class="flex min-h-full flex-col justify-end">
+        {
+          history.messages.length === 0 ? (
+            <p id="empty" class="px-4 py-10 text-center text-ink-soft">
+              No messages in #{room.name} yet. Say hello.
+            </p>
+          ) : null
+        }
+        <ul
+          id="messages"
+          class="py-3"
+          aria-live="polite"
+          sse-swap="message"
+          hx-swap="beforeend"
+          set:html={renderHistoryPage(room, history, user.id)}
+        />
+        </div>
+      </div>
+
+      <div
+        id="typing"
+        sse-swap="typing"
+        aria-live="polite"
+        class="h-5 shrink-0 truncate px-4 text-xs leading-5 text-ink-soft"
+        set:html={renderTyping(typists(room.id), user.id)}
+      />
+
+      <form
+        id="composer"
+        class="shrink-0 px-3 pt-0.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4"
+        action={`/api/rooms/${room.id}/messages`}
+        method="post"
+        x-data="composer"
+        @submit.prevent="send()"
+      >
+        <div
+          class="flex items-end gap-2 rounded-xl border border-line bg-bg px-3 py-2 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25"
+        >
+          <label for="message-input" class="sr-only">Message #{room.name}</label>
+          <textarea
+            id="message-input"
+            x-ref="input"
+            name="content"
+            rows="1"
+            required
+            maxlength="2000"
+            autocomplete="off"
+            placeholder={`Message #${room.name}`}
+            class="max-h-40 min-h-6 flex-1 resize-none bg-transparent py-1 leading-6 outline-none focus-visible:outline-none placeholder:text-ink-soft"
+            @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); send() }"
+            x-init="matchMedia('(min-width: 768px)').matches && $el.focus()"
+            @input="grow(); typing()"></textarea>
+          <button
+            class="grid size-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-ink hover:brightness-110 disabled:opacity-50"
+            aria-label="Send message"
+          >
+            <svg viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true"
+              ><path d="M3.4 20.4 21 12 3.4 3.6l-.01 6.53L15 12 3.39 13.87z"></path></svg
+            >
+          </button>
+        </div>
+        <p x-show="error" x-text="error" x-cloak class="mt-1 text-sm text-danger" role="alert"></p>
+        <p class="mt-1 hidden text-[11px] text-ink-soft md:block">Enter to send · Shift+Enter for a new line</p>
+      </form>
+    </main>
+  </div>
+</App>
+
+<script>
+  const scroller = document.getElementById('scroller')!;
+  const live = document.getElementById('live')!;
+  const me = live.dataset.me;
+  const toBottom = () => (scroller.scrollTop = scroller.scrollHeight);
+  const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+
+  toBottom();
+
+  let stickToBottom = true;
+  live.addEventListener('htmx:sseBeforeMessage', (e) => {
+    const evt = (e as CustomEvent).detail as MessageEvent;
+    // Skip anything already on screen (a replay after reconnecting, or a room we already list).
+    const id = /id="(msg-[^"]+)"/.exec(evt.data)?.[1];
+    const room = /data-room="([^"]+)"/.exec(evt.data)?.[1];
+    if ((id && document.getElementById(id)) || (room && document.querySelector(`#room-list [data-room="${CSS.escape(room)}"]`))) {
+      e.preventDefault();
+      return;
+    }
+    if (evt.type === 'message') {
+      // Follow new messages only if the reader was already at the bottom, or it's their own.
+      stickToBottom = nearBottom() || evt.data.includes(`data-user="${me}"`);
+    }
+  });
+
+  live.addEventListener('htmx:sseMessage', (e) => {
+    if (((e as CustomEvent).detail as MessageEvent).type !== 'message') return;
+    document.getElementById('empty')?.remove();
+    if (stickToBottom) toBottom();
+  });
+
+  // "Load earlier": keep the reader looking at the same message after older ones are added above.
+  let fromBottom = 0;
+  scroller.addEventListener('htmx:beforeSwap', (e) => {
+    if ((e.target as Element).id === 'load-earlier') fromBottom = scroller.scrollHeight - scroller.scrollTop;
+  });
+  scroller.addEventListener('htmx:afterSettle', (e) => {
+    if (fromBottom) {
+      scroller.scrollTop = scroller.scrollHeight - fromBottom;
+      fromBottom = 0;
+    }
+  });
+</script>

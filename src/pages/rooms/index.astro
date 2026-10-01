@@ -1,0 +1,34 @@
+---
+import App from '../../layouts/App.astro';
+import Sidebar from '../../components/Sidebar.astro';
+import { listRooms } from '../../lib/rooms';
+import { counts } from '../../lib/presence';
+
+const rooms = await listRooms();
+const error = Astro.url.searchParams.get('error');
+
+// Where the live connection resumes from: render time, minus a little for clock skew
+// between this server and the database. Duplicates are dropped by the client.
+const renderedAt = Date.now() - 2000;
+---
+
+<App title="Rooms · Live Chat">
+  <div
+    id="live"
+    data-since={renderedAt}
+    class="mx-auto h-dvh max-w-xl md:border-x md:border-line"
+    hx-ext="sse"
+    sse-connect="/api/rooms/stream"
+  >
+    <Sidebar rooms={rooms} user={Astro.locals.user} error={error} counts={counts()} standalone />
+  </div>
+</App>
+
+<script>
+  // Don't add a room we already list (e.g. the one this person just created).
+  document.getElementById('live')!.addEventListener('htmx:sseBeforeMessage', (e) => {
+    const data = ((e as CustomEvent).detail as MessageEvent).data as string;
+    const room = /data-room="([^"]+)"/.exec(data)?.[1];
+    if (room && document.querySelector(`#room-list [data-room="${CSS.escape(room)}"]`)) e.preventDefault();
+  });
+</script>

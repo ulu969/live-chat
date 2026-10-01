@@ -1,0 +1,136 @@
+---
+import type { Room, User } from '../db/schema';
+import { initials } from '../lib/html';
+import { renderRoomLink } from '../lib/render';
+
+interface Props {
+  rooms: Room[];
+  currentId?: string;
+  user: User;
+  /** Full-width list (the /rooms page on mobile) vs. the desktop sidebar */
+  standalone?: boolean;
+  error?: string | null;
+  /** Online count per room id */
+  counts?: Record<string, number>;
+}
+const { rooms, currentId, user, standalone = false, error = null, counts = {} } = Astro.props;
+const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, count: counts[r.id] ?? 0 })).join('');
+---
+
+<nav
+  aria-label="Rooms"
+  x-data
+  class:list={[
+    'flex min-h-0 flex-col bg-sidebar',
+    standalone ? 'h-full w-full' : 'hidden w-64 shrink-0 border-r border-line md:flex',
+  ]}
+>
+  <div class="flex items-center justify-between px-4 pt-4 pb-2">
+    <h2 class:list={['font-display font-bold tracking-tight', standalone ? 'text-2xl' : 'text-lg']}>Rooms</h2>
+    <button
+      type="button"
+      @click="document.getElementById('new-room').showModal(); document.getElementById('room-name').focus()"
+      class:list={[
+        'rounded-md font-medium text-accent hover:bg-panel',
+        standalone ? 'px-3 py-2 text-base' : 'px-2 py-1 text-sm',
+      ]}
+    >
+      + New
+    </button>
+  </div>
+
+  {error && <p class="mx-4 mb-2 rounded-md bg-signal-bg px-3 py-2 text-sm" role="alert">{error}</p>}
+
+  <ul
+    id="room-list"
+    class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2"
+    sse-swap="newroom"
+    hx-swap="beforeend"
+    set:html={listHtml}
+  />
+
+  <div class="flex items-center gap-2 border-t border-line px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+    <span
+      aria-hidden="true"
+      class="grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
+      style={`background:${user.color}`}>{initials(user.nickname)}</span
+    >
+    <span class="min-w-0 flex-1 truncate font-medium">{user.nickname}</span>
+    <button
+      type="button"
+      x-data
+      @click="$store.theme.toggle()"
+      class="rounded-md p-1.5 text-ink-soft hover:bg-panel hover:text-ink"
+      :aria-label="$store.theme.dark ? 'Switch to light mode' : 'Switch to dark mode'"
+      aria-label="Toggle dark mode"
+    >
+      <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
+        ><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg
+      >
+    </button>
+    <form method="post" action="/api/leave">
+      <button class="rounded-md px-2 py-1 text-sm text-ink-soft hover:bg-panel hover:text-danger">Exit</button>
+    </form>
+  </div>
+
+  <!-- New room dialog -->
+  <dialog
+      id="new-room"
+      aria-labelledby="new-room-title"
+      x-data="{ error: '' }"
+      @close="error = ''; $el.querySelector('form').reset()"
+      @click.self="$el.close()"
+      class="m-auto w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-line bg-panel p-0 text-ink shadow-xl backdrop:bg-black/40"
+    >
+      <form
+        hx-post="/api/rooms"
+        hx-swap="none"
+        hx-disabled-elt="find button[type=submit]"
+        @htmx:response-error="error = $event.detail.xhr.responseText || 'Could not create the room. Try again.'"
+        @htmx:send-error="error = 'Could not reach the server. Check your connection and try again.'"
+        class="space-y-4 p-5"
+      >
+        <h3 id="new-room-title" class="font-display text-xl font-bold tracking-tight">New room</h3>
+        <div class="space-y-1.5">
+          <label for="room-name" class="block text-sm font-medium">Name</label>
+          <input
+            id="room-name"
+            name="name"
+            required
+            minlength="2"
+            maxlength="40"
+            autocomplete="off"
+            placeholder="e.g. Race day"
+            @input="error = ''"
+            class="w-full rounded-lg border border-line bg-bg px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          />
+        </div>
+        <div class="space-y-1.5">
+          <label for="room-desc" class="block text-sm font-medium">
+            Description <span class="font-normal text-ink-soft">(optional)</span>
+          </label>
+          <input
+            id="room-desc"
+            name="description"
+            maxlength="140"
+            autocomplete="off"
+            placeholder="What's this room for?"
+            class="w-full rounded-lg border border-line bg-bg px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          />
+        </div>
+        <p x-show="error" x-text="error" class="text-sm text-danger" role="alert"></p>
+        <div class="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            @click="$el.closest('dialog').close()"
+            class="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-hover">Cancel</button
+          >
+          <button
+            type="submit"
+            class="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
+            >Create room</button
+          >
+        </div>
+      </form>
+  </dialog>
+</nav>
