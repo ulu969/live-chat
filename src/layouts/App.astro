@@ -13,6 +13,7 @@ const { title } = Astro.props;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#eef3f2" />
     <title>{title}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -27,6 +28,7 @@ const { title } = Astro.props;
         try { t = localStorage.getItem('theme'); } catch {}
         const dark = t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.classList.toggle('dark', dark);
+        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#121c1f');
       })();
     </script>
   </head>

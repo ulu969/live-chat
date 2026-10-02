@@ -183,10 +183,9 @@ const pageId = nanoid(12);
             name="content"
             rows="1"
             required
-            maxlength="2000"
             autocomplete="off"
             placeholder={`Message #${room.name}`}
-            class="max-h-40 min-h-6 flex-1 resize-none bg-transparent py-1 leading-6 outline-none focus-visible:outline-none placeholder:text-ink-soft"
+            class="max-h-40 min-h-6 flex-1 resize-none bg-transparent py-1 text-base leading-6 outline-none md:text-[15px] focus-visible:outline-none placeholder:text-ink-soft"
             @keydown="onKey($event)"
             @click="updateMention()"
             @blur="setTimeout(() => closeMention(), 150)"
@@ -206,7 +205,17 @@ const pageId = nanoid(12);
           </button>
         </div>
         <p x-show="error" x-text="error" x-cloak class="mt-1 text-sm text-danger" role="alert"></p>
-        <p class="mt-1 hidden text-[11px] text-ink-soft md:block">Enter to send · Shift+Enter for a new line · @ to mention</p>
+        <div class="mt-1 flex text-[11px] text-ink-soft">
+          <p class="hidden md:block">Enter to send · Shift+Enter for a new line · @ to mention</p>
+          <p
+            x-show="left < 200"
+            x-cloak
+            x-text="left >= 0 ? `${left} characters left` : `${-left} over the limit`"
+            :class="left < 0 ? 'text-danger font-medium' : ''"
+            class="ml-auto tabular-nums"
+            aria-live="polite"
+          ></p>
+        </div>
       </form>
     </main>
   </div>

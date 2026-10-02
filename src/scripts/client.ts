@@ -73,6 +73,8 @@ window.addEventListener('pageshow', () => (leaving = false));
 // ---- Theme ---------------------------------------------------------------
 function applyTheme(dark: boolean) {
   document.documentElement.classList.toggle('dark', dark);
+  // Phone browser bar matches the app (same values as --c-bg in global.css).
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#121c1f' : '#eef3f2');
 }
 const themeStore = {
   dark: document.documentElement.classList.contains('dark'),
@@ -86,19 +88,44 @@ const themeStore = {
 };
 Alpine.store('theme', themeStore);
 
-// ---- Local times -----------------------------------------------------------
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+// ---- Times ----------------------------------------------------------------------
+// Server sends <time class="local-time" datetime="…UTC…">; we show it in the viewer's time
+// zone, relative when recent ("just now", "2 min ago"), and keep it fresh. The exact date
+// and time is always in the tooltip. Gutter times (grouped messages) stay a short clock time.
+const clockFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const dayFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const dayYearFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' });
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+export function relativeTime(d: Date, now = new Date()): string {
+  const ago = now.getTime() - d.getTime();
+  if (ago < 45_000) return 'just now'; // also covers small clock differences (ago < 0)
+  if (ago < 60 * 60_000) return `${Math.max(1, Math.round(ago / 60_000))} min ago`;
+  const clock = clockFmt.format(d);
+  const days = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (days === 0) return clock;
+  if (days === 1) return `Yesterday ${clock}`;
+  const day = d.getFullYear() === now.getFullYear() ? dayFmt.format(d) : dayYearFmt.format(d);
+  return `${day}, ${clock}`;
+}
+
 export function localizeTimes(root: ParentNode = document) {
-  root.querySelectorAll<HTMLTimeElement>('time.local-time:not([data-done])').forEach((t) => {
+  const now = new Date();
+  root.querySelectorAll<HTMLTimeElement>('time.local-time').forEach((t) => {
     const d = new Date(t.dateTime);
-    t.textContent = timeFmt.format(d);
-    t.title = d.toLocaleString();
-    t.dataset.done = '1';
+    const text = t.closest('.msg-gutter') ? clockFmt.format(d) : relativeTime(d, now);
+    if (t.textContent !== text) t.textContent = text;
+    if (!t.title) t.title = fullFmt.format(d);
   });
 }
 document.addEventListener('DOMContentLoaded', () => localizeTimes());
 document.addEventListener('htmx:afterSwap', (e) => localizeTimes((e.target as Element) ?? document));
 document.addEventListener('htmx:sseMessage', () => localizeTimes());
+// Keep "2 min ago" honest: refresh every 30 s, and right away when the tab comes back.
+setInterval(() => localizeTimes(), 30_000);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && localizeTimes());
 
 // ---- JSON events on the live connection --------------------------------------
 // Most events are HTML that htmx swaps in via sse-swap. `counts` is JSON (online
@@ -253,13 +280,25 @@ const bellStore = {
 };
 Alpine.store('bell', bellStore);
 
+// Unread mentions in the tab title, e.g. "(2) #Lobby · Live Chat", so you notice from another tab.
+const baseTitle = document.title.replace(/^\(\d+\+?\)\s*/, '');
+document.addEventListener('alpine:initialized', () => {
+  Alpine.effect(() => {
+    const n = (Alpine.store('bell') as typeof bellStore).unread;
+    document.title = n > 0 ? `(${n > 99 ? '99+' : n}) ${baseTitle}` : baseTitle;
+  });
+});
+
 // ---- Composer ----------------------------------------------------------------
 // Clears the box the instant you send so you can keep typing, and posts messages
 // strictly in order. The message comes back to every window (yours too) over SSE.
 const TYPING_EVERY_MS = 1_500; // server expires typing after 2 s, so ping a bit faster
 
+const MAX_MESSAGE = 2000;
+
 Alpine.data('composer', () => ({
   error: '',
+  left: MAX_MESSAGE, // characters left; shown when close to the limit
   // @mention autocomplete state
   mentionOpen: false,
   mentionItems: [] as string[],
@@ -341,11 +380,16 @@ Alpine.data('composer', () => ({
     const el = this.input();
     el.style.height = '';
     el.style.height = el.scrollHeight + 'px';
+    this.left = MAX_MESSAGE - el.value.length;
   },
   send() {
     const el = this.input();
     const content = el.value.trim();
     if (!content) return;
+    if (content.length > MAX_MESSAGE) {
+      this.error = `Messages can be at most ${MAX_MESSAGE} characters. Shorten it by ${content.length - MAX_MESSAGE} to send.`;
+      return;
+    }
     const url = (el.form as HTMLFormElement).action;
     el.value = '';
     this.closeMention();

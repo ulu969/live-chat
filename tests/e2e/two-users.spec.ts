@@ -227,6 +227,58 @@ test('sound toggle is remembered in this browser', async () => {
   await expect(alice.locator('#sound-toggle')).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('relative timestamps: "just now", then minutes, then the clock time', async ({ browser }) => {
+  const text = `clock check ${tag}`;
+  await send(bob, text);
+  // A viewer whose clock we control, so we can skip ahead without waiting.
+  const ctx = await browser.newContext();
+  await ctx.addCookies(await bobCtx.cookies());
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto('/rooms/lobby');
+  const time = message(page, text).locator('.msg-head time');
+  await expect(time).toHaveText('just now');
+  await expect(time).toHaveAttribute('title', /\d/); // full date and time on hover
+  await page.clock.fastForward('03:00'); // 3 minutes; the 30 s refresh picks it up
+  await expect(time).toHaveText('3 min ago');
+  await page.clock.fastForward('02:00:00'); // 2 hours later
+  await expect(time).toHaveText(/^(\d{1,2}:\d{2}\s?[AP]M|Yesterday .+)$/); // clock time (or yesterday near midnight)
+  await ctx.close();
+});
+
+test('polish: links are clickable, mentions show in the tab title, 404 page', async () => {
+  await send(bob, `forecast https://example.com/wx?d=1. ${tag}`);
+  const link = message(alice, `forecast`).last().locator('a.msg-link');
+  await expect(link).toHaveAttribute('href', 'https://example.com/wx?d=1'); // trailing "." not included
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', /noopener/);
+
+  await send(bob, `@${ALICE} title check ${tag}`);
+  await expect(alice).toHaveTitle(/^\(1\) #Lobby/);
+  await alice.getByRole('button', { name: /Mentions/ }).click();
+  await alice.getByRole('button', { name: 'Mark all read' }).click();
+  await expect(alice).toHaveTitle(/^#Lobby/);
+  await alice.keyboard.press('Escape');
+
+  const res = await bob.goto('/no-such-page');
+  expect(res?.status()).toBe(404);
+  await expect(bob.getByRole('heading', { name: "There's nothing at this address" })).toBeVisible();
+  await bob.getByRole('link', { name: 'Go to the Lobby' }).click();
+  await bob.waitForURL('**/rooms/lobby');
+});
+
+test('polish: over-long messages are stopped with a clear message', async () => {
+  const box = bob.locator('#message-input');
+  await box.fill('x'.repeat(2005));
+  await box.dispatchEvent('input');
+  await expect(bob.getByText('5 over the limit')).toBeVisible();
+  await box.press('Enter');
+  await expect(bob.getByRole('alert')).toContainText('at most 2000 characters');
+  await expect(box).toHaveValue('x'.repeat(2005)); // nothing lost
+  await box.fill('');
+  await box.dispatchEvent('input');
+});
+
 test('catch-up: messages sent while a window was disconnected arrive once it reconnects', async () => {
   // Cut Bob off: block his live connection, then drop everyone's current connection.
   const stream = '**/api/rooms/*/stream*';

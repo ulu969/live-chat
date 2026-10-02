@@ -136,7 +136,7 @@ export function renderHistoryPage(
 }
 
 export function renderRoomLink(
-  room: { id: string; name: string },
+  room: { id: string; name: string; description?: string | null },
   opts: { currentId?: string; standalone?: boolean; count?: number } = {},
 ): string {
   const current = room.id === opts.currentId;
@@ -145,10 +145,15 @@ export function renderRoomLink(
     opts.standalone ? 'py-3 text-base' : 'py-1.5',
     current ? 'bg-accent font-semibold text-accent-ink' : 'text-ink hover:bg-panel',
   ].join(' ');
+  // The full-page list (phones) has room for the description under the name.
+  const desc =
+    opts.standalone && room.description
+      ? `<span class="block truncate text-sm text-ink-soft">${escapeHtml(room.description)}</span>`
+      : '';
   return `<li data-room="${escapeHtml(room.id)}">
     <a href="/rooms/${encodeURIComponent(room.id)}" class="${cls}"${current ? ' aria-current="page"' : ''}>
-      <span class="opacity-60">#</span>
-      <span class="min-w-0 flex-1 truncate">${escapeHtml(room.name)}</span>
+      <span class="self-start opacity-60">#</span>
+      <span class="min-w-0 flex-1"><span class="block truncate">${escapeHtml(room.name)}</span>${desc}</span>
       ${renderRoomCount(room.id, opts.count ?? 0)}
     </a>
   </li>`;

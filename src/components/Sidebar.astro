@@ -115,7 +115,7 @@ const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, cou
             autocomplete="off"
             placeholder="e.g. Race day"
             @input="error = ''"
-            class="w-full rounded-lg border border-line bg-bg px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            class="w-full rounded-lg border border-line bg-bg px-3 py-2 text-base outline-none focus:border-accent md:text-[15px] focus:ring-2 focus:ring-accent/30"
           />
         </div>
         <div class="space-y-1.5">
@@ -128,7 +128,7 @@ const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, cou
             maxlength="140"
             autocomplete="off"
             placeholder="What's this room for?"
-            class="w-full rounded-lg border border-line bg-bg px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            class="w-full rounded-lg border border-line bg-bg px-3 py-2 text-base outline-none focus:border-accent md:text-[15px] focus:ring-2 focus:ring-accent/30"
           />
         </div>
         <p x-show="error" x-text="error" class="text-sm text-danger" role="alert"></p>
@@ -177,7 +177,7 @@ const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, cou
           maxlength="24"
           autocomplete="nickname"
           @input="error = ''"
-          class="w-full rounded-lg border border-line bg-bg px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          class="w-full rounded-lg border border-line bg-bg px-3 py-2 text-base outline-none focus:border-accent md:text-[15px] focus:ring-2 focus:ring-accent/30"
         />
         <p class="text-xs text-ink-soft">Everyone in your rooms will see the change.</p>
       </div>

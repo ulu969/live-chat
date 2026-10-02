@@ -81,8 +81,24 @@ export function findMentions(content: string): { userIds: Set<string>; everyone:
   return { userIds, everyone };
 }
 
+// http(s) links, not swallowing trailing punctuation like "see https://x.com."
+const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]}]/gi;
+
+/** Plain text as safe HTML, with web links made clickable (opening in a new tab). */
+function linkify(text: string): string {
+  let html = '';
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    html += escapeHtml(text.slice(last, m.index));
+    const url = escapeHtml(m[0]);
+    html += `<a href="${url}" target="_blank" rel="noopener noreferrer nofollow" class="msg-link">${url}</a>`;
+    last = m.index! + m[0].length;
+  }
+  return html + escapeHtml(text.slice(last));
+}
+
 /**
- * Message text as safe HTML with mentions highlighted. `mentionsViewer` is true when
+ * Message text as safe HTML with mentions highlighted and links clickable. `mentionsViewer` is true when
  * the viewer is mentioned by name or via @everyone (their copy of the message stands out).
  */
 export function renderContent(content: string, viewerId: string): { html: string; mentionsViewer: boolean } {
@@ -90,7 +106,7 @@ export function renderContent(content: string, viewerId: string): { html: string
   let mentionsViewer = false;
   for (const s of tokenize(content)) {
     if (!('mention' in s)) {
-      html += escapeHtml(s.text);
+      html += linkify(s.text);
     } else if (s.mention === EVERYONE) {
       mentionsViewer = true;
       html += '<span class="mention mention-everyone">@EVERYONE</span>';

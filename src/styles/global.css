@@ -194,3 +194,14 @@ body {
 .msg-flash {
   animation: msg-flash 2.4s ease-out;
 }
+
+/* Links in messages */
+.msg-link {
+  color: var(--c-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere; /* wrap long links only when they don't fit on a line */
+}
+.msg-link:hover {
+  text-decoration-thickness: 2px;
+}
