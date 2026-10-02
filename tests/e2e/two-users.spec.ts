@@ -82,7 +82,7 @@ test('4. typing indicator shows, then clears a few seconds after typing stops', 
 test('5. a message posted in another room never appears in the Lobby', async ({ browser }) => {
   const { ctx, page: carol } = await joinAs(browser, `carol-${tag}`);
   await carol.getByRole('button', { name: '+ New' }).click();
-  await carol.getByLabel('Name').fill(`Elsewhere ${tag}`);
+  await carol.getByLabel('Name', { exact: true }).fill(`Elsewhere ${tag}`);
   await carol.getByRole('button', { name: 'Create room' }).click();
   await carol.waitForURL(`**/rooms/elsewhere-${tag}`);
   // the new room appears in Alice's sidebar live
@@ -107,6 +107,61 @@ test('6. a refreshed window loads history and keeps receiving live messages', as
   // the refresh was inside the grace period: no "left"/"joined" spam
   await expect(alice.getByText(`${BOB} left`)).toHaveCount(0);
   await expect(alice.getByText(`${BOB} joined`)).toHaveCount(1);
+});
+
+test('grouping: consecutive messages from one person share one header', async () => {
+  // Start a fresh group: Alice's previous message was under 5 minutes ago.
+  await send(bob, `break ${tag}`);
+  await expect(message(alice, `break ${tag}`)).toBeVisible();
+  for (const n of [1, 2, 3]) await send(alice, `group ${n} ${tag}`);
+  await expect(message(bob, `group 3 ${tag}`)).toBeVisible();
+  for (const page of [alice, bob]) {
+    await expect(message(page, `group 1 ${tag}`)).not.toHaveClass(/msg-cont/);
+    await expect(message(page, `group 2 ${tag}`)).toHaveClass(/msg-cont/);
+    await expect(message(page, `group 3 ${tag}`)).toHaveClass(/msg-cont/);
+  }
+  await expect(message(bob, `group 2 ${tag}`).locator('.msg-head')).toBeHidden();
+  // Someone else speaking breaks the group.
+  await send(bob, `interrupt ${tag}`);
+  await send(alice, `group 4 ${tag}`);
+  await expect(message(bob, `group 4 ${tag}`)).toBeVisible();
+  await expect(message(bob, `interrupt ${tag}`)).not.toHaveClass(/msg-cont/);
+  await expect(message(bob, `group 4 ${tag}`)).not.toHaveClass(/msg-cont/);
+  // Same grouping after a full page load (server-rendered).
+  await bob.reload();
+  await expect(message(bob, `group 3 ${tag}`)).toHaveClass(/msg-cont/);
+  await expect(message(bob, `group 4 ${tag}`)).not.toHaveClass(/msg-cont/);
+});
+
+test('rename: everyone sees the new name, and a taken name is refused', async () => {
+  const NEW = `robert-${tag}`;
+  const rename = async (to: string) => {
+    await bob.locator('button[title="Change your name"]').click();
+    await bob.getByLabel('New nickname').fill(to);
+    await bob.getByRole('button', { name: 'Change name' }).click();
+  };
+
+  // Taken (case-insensitive): refused inside the dialog.
+  await rename(ALICE.toUpperCase());
+  await expect(bob.locator('#rename').getByRole('alert')).toContainText('already taken');
+  await bob.keyboard.press('Escape');
+
+  await rename(NEW);
+  await expect(bob.locator('#rename')).not.toBeVisible();
+  await expect(alice.getByText(`${BOB} changed their name to ${NEW}`)).toBeVisible();
+  // Names already on screen update live: Bob's old messages, the online list, his own sidebar.
+  await expect(message(alice, `hi alice ${tag}`).locator('.msg-name')).toHaveText(NEW);
+  await expect(bob.locator('[data-user-name]')).toHaveText(NEW);
+  await onlineCount(alice).click();
+  await expect(alice.locator(`#online-list [data-nickname="${NEW}"]`)).toBeVisible();
+  await alice.keyboard.press('Escape');
+  // Messages from now on carry the new name.
+  await send(bob, `as robert ${tag}`);
+  await expect(message(alice, `as robert ${tag}`).locator('.msg-name')).toHaveText(NEW);
+
+  // Back to the original name for the remaining tests.
+  await rename(BOB);
+  await expect(alice.getByText(`${NEW} changed their name to ${BOB}`)).toBeVisible();
 });
 
 test('catch-up: messages sent while a window was disconnected arrive once it reconnects', async () => {

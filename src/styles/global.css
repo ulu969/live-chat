@@ -126,3 +126,24 @@ body {
     opacity: 1;
   }
 }
+
+/* Message grouping: a continuation drops its avatar and header and shows its time in the
+   gutter on hover. (Unlayered, so these win over the Tailwind classes on the element.) */
+.msg .msg-gutter {
+  display: none;
+}
+.msg-cont {
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+.msg-cont .msg-avatar,
+.msg-cont .msg-head {
+  display: none;
+}
+.msg-cont .msg-gutter {
+  display: block;
+  visibility: hidden;
+}
+.msg-cont:hover .msg-gutter {
+  visibility: visible;
+}

@@ -15,6 +15,7 @@ import { resumePoint, sseResponse } from '../../../../lib/sse-stream';
  *  presence – online count (HTML)        userlist – who's online (HTML)
  *  typing   – who's typing (HTML)        newroom  – a room was created (HTML)
  *  counts   – online count per room (JSON, for sidebar badges)
+ *  renamed  – someone changed their nickname (JSON, to update names on screen)
  * Every HTML payload is rendered for this connection's viewer.
  *
  * On every (re)connect the browser says where it left off (?since / Last-Event-ID) and we
@@ -53,6 +54,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
     const offGlobal = onGlobal((e) => {
       if (e.type === 'newroom') send(sseEvent('newroom', renderRoomLink(e.room, { currentId: room.id })));
       else if (e.type === 'counts') send(sseEvent('counts', JSON.stringify(e.counts)));
+      else if (e.type === 'renamed') send(sseEvent('renamed', JSON.stringify(e.user)));
     });
 
     // Subscribed first, so this person sees their own "joined" message.

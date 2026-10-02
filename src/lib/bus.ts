@@ -2,7 +2,7 @@
  * In-memory event bus. A POST saves to the database and then emits here; every
  * open SSE connection that cares is listening and writes the event to its stream.
  *  - room:<id>  events for one room only (messages). Other rooms never see them.
- *  - global     app-wide events (a room was created, online counts changed).
+ *  - global     app-wide events (a room was created, online counts changed, someone renamed).
  * Stored on globalThis so Vite HMR in dev doesn't create a second, disconnected bus.
  */
 import { EventEmitter } from 'node:events';
@@ -15,7 +15,8 @@ export type RoomEvent =
   | { type: 'typing' }; // who's typing changed; each connection renders it without its own name
 export type GlobalEvent =
   | { type: 'newroom'; room: Room }
-  | { type: 'counts'; counts: Record<string, number> }; // online count per room, for sidebars
+  | { type: 'counts'; counts: Record<string, number> } // online count per room, for sidebars
+  | { type: 'renamed'; user: { id: string; nickname: string } }; // update names already on screen
 
 const g = globalThis as unknown as { __chatBus?: EventEmitter };
 export const bus = (g.__chatBus ??= (() => {

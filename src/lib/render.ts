@@ -12,7 +12,19 @@ const timeTag = (d: Date) => {
   return `<time datetime="${iso}" class="local-time">${iso.slice(11, 16)}</time>`;
 };
 
-export function renderMessage(m: ChatMessage, viewerId: string): string {
+/** Messages from the same person this close together share one header (Slack-style). */
+export const GROUP_WINDOW_MS = 5 * 60_000;
+
+/** Same rule as `regroup()` in the room page script, which re-applies it after live/history swaps. */
+export const continues = (prev: ChatMessage | undefined, m: ChatMessage) =>
+  !!prev &&
+  prev.type === 'message' &&
+  m.type === 'message' &&
+  !!prev.user &&
+  prev.user.id === m.user?.id &&
+  m.createdAt.getTime() - prev.createdAt.getTime() < GROUP_WINDOW_MS;
+
+export function renderMessage(m: ChatMessage, viewerId: string, opts: { cont?: boolean } = {}): string {
   const ts = m.createdAt.getTime();
   if (m.type !== 'message' || !m.user) {
     return `<li id="msg-${m.id}" data-ts="${ts}" data-kind="system"
@@ -25,14 +37,17 @@ export function renderMessage(m: ChatMessage, viewerId: string): string {
 
   const own = m.user.id === viewerId;
   const name = escapeHtml(m.user.nickname);
+  // A continuation (`msg-cont`) hides the avatar and header via CSS and shows the time in
+  // the gutter on hover. The class is toggled client-side too, so both parts are always rendered.
   return `<li id="msg-${m.id}" data-ts="${ts}" data-user="${m.user.id}"
-    class="msg group flex gap-3 px-4 py-1.5 ${own ? 'bg-own/60 hover:bg-own' : 'hover:bg-hover'}">
+    class="msg group flex gap-3 px-4 py-1.5 ${opts.cont ? 'msg-cont' : ''} ${own ? 'bg-own/60 hover:bg-own' : 'hover:bg-hover'}">
     <span aria-hidden="true"
-      class="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg text-sm font-semibold text-white"
+      class="msg-avatar mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg text-sm font-semibold text-white"
       style="background:${escapeHtml(m.user.color)}">${escapeHtml(initials(m.user.nickname))}</span>
+    <span class="msg-gutter w-9 shrink-0 pt-0.5 text-right text-[10px] leading-5 whitespace-nowrap text-ink-soft">${timeTag(m.createdAt)}</span>
     <div class="min-w-0 flex-1">
-      <div class="flex items-baseline gap-2">
-        <span class="name-color font-semibold" style="color:${escapeHtml(m.user.color)}">${name}</span>
+      <div class="msg-head flex items-baseline gap-2">
+        <span class="msg-name name-color font-semibold" style="color:${escapeHtml(m.user.color)}">${name}</span>
         ${own ? '<span class="text-[11px] text-ink-soft">you</span>' : ''}
         <span class="text-xs text-ink-soft">${timeTag(m.createdAt)}</span>
       </div>
@@ -63,11 +78,13 @@ function renderMembershipRun(run: ChatMessage[]): string {
 }
 
 /**
- * Renders a list oldest-first. Three or more consecutive joined/left lines from the same
+ * Renders a list oldest-first. Consecutive messages from one person within 5 minutes are
+ * grouped under one header. Three or more consecutive joined/left lines from the same
  * person (e.g. a laptop waking and sleeping overnight) collapse into one summary line.
  */
 export function renderMessages(list: ChatMessage[], viewerId: string): string {
   let html = '';
+  let prev: ChatMessage | undefined;
   for (let i = 0; i < list.length; ) {
     const m = list[i]!;
     if (isMembership(m)) {
@@ -75,11 +92,13 @@ export function renderMessages(list: ChatMessage[], viewerId: string): string {
       while (j < list.length && isMembership(list[j]!) && list[j]!.user!.id === m.user!.id) j++;
       if (j - i >= 3) {
         html += renderMembershipRun(list.slice(i, j));
+        prev = undefined;
         i = j;
         continue;
       }
     }
-    html += renderMessage(m, viewerId);
+    html += renderMessage(m, viewerId, { cont: continues(prev, m) });
+    prev = m;
     i++;
   }
   return html;

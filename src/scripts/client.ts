@@ -117,7 +117,27 @@ document.addEventListener('htmx:sseOpen', (e) => {
       el.setAttribute('aria-label', `${n} online`);
     });
   });
+  // Someone changed their nickname: update it everywhere it's already on screen.
+  source.addEventListener('renamed', (ev) => {
+    const { id, nickname } = JSON.parse((ev as MessageEvent).data) as { id: string; nickname: string };
+    const sel = CSS.escape(id);
+    document.querySelectorAll(`#messages li[data-user="${sel}"] .msg-name, [data-user-name="${sel}"]`).forEach((el) => {
+      el.textContent = nickname;
+    });
+    document
+      .querySelectorAll(`#messages li[data-user="${sel}"] .msg-avatar, [data-user-initials="${sel}"]`)
+      .forEach((el) => (el.textContent = initials(nickname)));
+  });
 });
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]!.toUpperCase())
+    .join('');
+}
 
 // ---- Composer ----------------------------------------------------------------
 // Clears the box the instant you send so you can keep typing, and posts messages

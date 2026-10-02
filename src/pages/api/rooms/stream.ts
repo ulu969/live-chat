@@ -16,6 +16,7 @@ export const GET: APIRoute = ({ request }) => {
       onGlobal((e) => {
         if (e.type === 'newroom') send(sseEvent('newroom', renderRoomLink(e.room, { standalone: true })));
         else if (e.type === 'counts') send(sseEvent('counts', JSON.stringify(e.counts)));
+        else if (e.type === 'renamed') send(sseEvent('renamed', JSON.stringify(e.user)));
       }),
     async (send) => {
       if (since) for (const r of await listRoomsSince(since)) send(sseEvent('newroom', renderRoomLink(r, { standalone: true })));

@@ -155,17 +155,24 @@ export function counts(): Record<string, number> {
   return out;
 }
 
-/** Update a person's display details everywhere they're present (used by rename later). */
-export function updateUser(user: PresentUser): string[] {
-  const touched: string[] = [];
-  for (const [id, room] of rooms) {
+/** Rooms this person is in right now: online, or offline but not yet announced as "left". */
+export function roomsOf(userId: string): string[] {
+  const ids = new Set<string>();
+  for (const [id, room] of rooms) if (room.has(userId)) ids.add(id);
+  for (const [id, room] of away) if (room.has(userId)) ids.add(id);
+  return [...ids];
+}
+
+/** Update a person's display details everywhere they're present (after a rename). */
+export function updateUser(user: PresentUser) {
+  for (const room of rooms.values()) {
     const entry = room.get(user.id);
-    if (entry) {
-      entry.user = user;
-      touched.push(id);
-    }
+    if (entry) entry.user = user;
   }
-  return touched;
+  for (const room of away.values()) {
+    const a = room.get(user.id);
+    if (a) a.user = user;
+  }
 }
 
 // ---- Page loads ------------------------------------------------------------------

@@ -165,6 +165,24 @@ const pageId = nanoid(12);
   const toBottom = () => (scroller.scrollTop = scroller.scrollHeight);
   const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
 
+  // Group consecutive messages from one person (same rule as `continues()` in lib/render.ts).
+  // Live messages arrive ungrouped, and "Load earlier" can join groups across the page
+  // boundary, so re-apply after every swap. It's a quick walk over the list.
+  const GROUP_WINDOW_MS = 5 * 60_000;
+  function regroup() {
+    let prev: HTMLElement | null = null;
+    for (const li of document.querySelectorAll<HTMLElement>('#messages > li')) {
+      const cont =
+        !!prev &&
+        li.classList.contains('msg') &&
+        prev.classList.contains('msg') &&
+        li.dataset.user === prev.dataset.user &&
+        Number(li.dataset.ts) - Number(prev.dataset.ts) < GROUP_WINDOW_MS;
+      li.classList.toggle('msg-cont', cont);
+      prev = li;
+    }
+  }
+
   toBottom();
 
   let stickToBottom = true;
@@ -186,6 +204,7 @@ const pageId = nanoid(12);
   live.addEventListener('htmx:sseMessage', (e) => {
     if (((e as CustomEvent).detail as MessageEvent).type !== 'message') return;
     document.getElementById('empty')?.remove();
+    regroup();
     if (stickToBottom) toBottom();
   });
 
@@ -195,6 +214,7 @@ const pageId = nanoid(12);
     if ((e.target as Element).id === 'load-earlier') fromBottom = scroller.scrollHeight - scroller.scrollTop;
   });
   scroller.addEventListener('htmx:afterSettle', (e) => {
+    regroup();
     if (fromBottom) {
       scroller.scrollTop = scroller.scrollHeight - fromBottom;
       fromBottom = 0;

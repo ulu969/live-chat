@@ -46,3 +46,15 @@ export async function createUser(nickname: string): Promise<User> {
     .returning();
   return user;
 }
+
+/** Change a nickname. Returns null if another person already has it (case-insensitive). */
+export async function renameUser(id: string, nickname: string): Promise<User | null> {
+  const taken = await findByNickname(nickname);
+  if (taken && taken.id !== id) return null;
+  try {
+    const [user] = await db.update(schema.users).set({ nickname }).where(eq(schema.users.id, id)).returning();
+    return user ?? null;
+  } catch {
+    return null; // unique index race
+  }
+}

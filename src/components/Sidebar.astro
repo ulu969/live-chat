@@ -50,12 +50,21 @@ const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, cou
   />
 
   <div class="flex items-center gap-2 border-t border-line px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-    <span
-      aria-hidden="true"
-      class="grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
-      style={`background:${user.color}`}>{initials(user.nickname)}</span
+    <button
+      type="button"
+      title="Change your name"
+      @click="const d = document.getElementById('rename'); const i = document.getElementById('rename-input'); i.value = document.querySelector('[data-user-name]').textContent; d.showModal(); i.select()"
+      class="-ml-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-panel"
     >
-    <span class="min-w-0 flex-1 truncate font-medium">{user.nickname}</span>
+      <span
+        aria-hidden="true"
+        data-user-initials={user.id}
+        class="grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
+        style={`background:${user.color}`}>{initials(user.nickname)}</span
+      >
+      <span class="min-w-0 truncate font-medium" data-user-name={user.id}>{user.nickname}</span>
+      <span class="sr-only">Change your name</span>
+    </button>
     <button
       type="button"
       x-data
@@ -132,5 +141,55 @@ const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, cou
           >
         </div>
       </form>
+  </dialog>
+
+  <!-- Change name dialog -->
+  <dialog
+    id="rename"
+    aria-labelledby="rename-title"
+    x-data="{ error: '' }"
+    @close="error = ''"
+    @click.self="$el.close()"
+    class="m-auto w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-line bg-panel p-0 text-ink shadow-xl backdrop:bg-black/40"
+  >
+    <form
+      hx-post="/api/rename"
+      hx-swap="none"
+      hx-disabled-elt="find button[type=submit]"
+      @htmx:after-request="if ($event.detail.successful) $el.closest('dialog').close()"
+      @htmx:response-error="error = $event.detail.xhr.responseText || 'Could not change your name. Try again.'"
+      @htmx:send-error="error = 'Could not reach the server. Check your connection and try again.'"
+      class="space-y-4 p-5"
+    >
+      <h3 id="rename-title" class="font-display text-xl font-bold tracking-tight">Change name</h3>
+      <input type="hidden" name="room" value={currentId ?? ''} />
+      <div class="space-y-1.5">
+        <label for="rename-input" class="block text-sm font-medium">New nickname</label>
+        <input
+          id="rename-input"
+          name="nickname"
+          required
+          minlength="2"
+          maxlength="24"
+          autocomplete="nickname"
+          @input="error = ''"
+          class="w-full rounded-lg border border-line bg-bg px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+        />
+        <p class="text-xs text-ink-soft">Everyone in your rooms will see the change.</p>
+      </div>
+      <p x-show="error" x-text="error" class="text-sm text-danger" role="alert"></p>
+      <div class="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          @click="$el.closest('dialog').close()"
+          class="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft hover:bg-hover">Cancel</button
+        >
+        <button
+          type="submit"
+          class="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
+          >Change name</button
+        >
+      </div>
+    </form>
   </dialog>
 </nav>
