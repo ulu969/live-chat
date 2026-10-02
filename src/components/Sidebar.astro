@@ -2,6 +2,7 @@
 import type { Room, User } from '../db/schema';
 import { initials } from '../lib/html';
 import { renderRoomLink } from '../lib/render';
+import Bell from './Bell.astro';
 
 interface Props {
   rooms: Room[];
@@ -12,8 +13,10 @@ interface Props {
   error?: string | null;
   /** Online count per room id */
   counts?: Record<string, number>;
+  /** Unread mentions; the bell is shown here only on the standalone /rooms page */
+  unread?: number;
 }
-const { rooms, currentId, user, standalone = false, error = null, counts = {} } = Astro.props;
+const { rooms, currentId, user, standalone = false, error = null, counts = {}, unread = 0 } = Astro.props;
 const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, count: counts[r.id] ?? 0 })).join('');
 ---
 
@@ -27,6 +30,7 @@ const listHtml = rooms.map((r) => renderRoomLink(r, { currentId, standalone, cou
 >
   <div class="flex items-center justify-between px-4 pt-4 pb-2">
     <h2 class:list={['font-display font-bold tracking-tight', standalone ? 'text-2xl' : 'text-lg']}>Rooms</h2>
+    {standalone && <div class="ml-auto"><Bell unread={unread} /></div>}
     <button
       type="button"
       @click="document.getElementById('new-room').showModal(); document.getElementById('room-name').focus()"

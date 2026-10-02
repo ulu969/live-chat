@@ -155,6 +155,14 @@ export function counts(): Record<string, number> {
   return out;
 }
 
+/** Everyone in a room right now: online, or offline but not yet announced as "left". */
+export function peopleIn(roomId: string): PresentUser[] {
+  const out = new Map<string, PresentUser>();
+  for (const e of rooms.get(roomId)?.values() ?? []) out.set(e.user.id, e.user);
+  for (const a of away.get(roomId)?.values() ?? []) out.set(a.user.id, a.user);
+  return [...out.values()];
+}
+
 /** Rooms this person is in right now: online, or offline but not yet announced as "left". */
 export function roomsOf(userId: string): string[] {
   const ids = new Set<string>();

@@ -2,6 +2,7 @@
  * In-memory event bus. A POST saves to the database and then emits here; every
  * open SSE connection that cares is listening and writes the event to its stream.
  *  - room:<id>  events for one room only (messages). Other rooms never see them.
+ *  - user:<id>   events for one person on every page they have open (an @mention).
  *  - global     app-wide events (a room was created, online counts changed, someone renamed).
  * Stored on globalThis so Vite HMR in dev doesn't create a second, disconnected bus.
  */
@@ -13,6 +14,9 @@ export type RoomEvent =
   | { type: 'message'; message: ChatMessage }
   | { type: 'presence' } // who's online changed; each connection re-renders count + list
   | { type: 'typing' }; // who's typing changed; each connection renders it without its own name
+/** Events for one person, wherever they have the app open. */
+export type UserEvent = { type: 'mention'; notificationId: string; unread: number };
+
 export type GlobalEvent =
   | { type: 'newroom'; room: Room }
   | { type: 'counts'; counts: Record<string, number> } // online count per room, for sidebars
@@ -43,4 +47,13 @@ export function emitGlobal(event: GlobalEvent) {
 export function onGlobal(fn: (e: GlobalEvent) => void) {
   bus.on('global', fn);
   return () => bus.off('global', fn);
+}
+
+export function emitToUser(userId: string, event: UserEvent) {
+  bus.emit(`user:${userId}`, event);
+}
+
+export function onUser(userId: string, fn: (e: UserEvent) => void) {
+  bus.on(`user:${userId}`, fn);
+  return () => bus.off(`user:${userId}`, fn);
 }

@@ -1,12 +1,20 @@
 import type { APIRoute } from 'astro';
 import { getRoom, listRoomsSince } from '../../../../lib/rooms';
 import { listMessagesSince } from '../../../../lib/messages';
-import { onGlobal, onRoom } from '../../../../lib/bus';
+import { onGlobal, onRoom, onUser } from '../../../../lib/bus';
 import { isFreshPage, online } from '../../../../lib/presence';
 import { typists } from '../../../../lib/typing';
 import { connectionClosed, connectionOpened } from '../../../../lib/live';
-import { renderMessage, renderOnlineCount, renderRoomLink, renderTyping, renderUserList } from '../../../../lib/render';
+import {
+  renderMessage,
+  renderNotification,
+  renderOnlineCount,
+  renderRoomLink,
+  renderTyping,
+  renderUserList,
+} from '../../../../lib/render';
 import { sseEvent } from '../../../../lib/sse';
+import { getNotifications } from '../../../../lib/notifications';
 import { resumePoint, sseResponse } from '../../../../lib/sse-stream';
 
 /**
@@ -16,6 +24,7 @@ import { resumePoint, sseResponse } from '../../../../lib/sse-stream';
  *  typing   – who's typing (HTML)        newroom  – a room was created (HTML)
  *  counts   – online count per room (JSON, for sidebar badges)
  *  renamed  – someone changed their nickname (JSON, to update names on screen)
+ *  mention  – this viewer was @mentioned somewhere (JSON: unread count + bell item HTML)
  * Every HTML payload is rendered for this connection's viewer.
  *
  * On every (re)connect the browser says where it left off (?since / Last-Event-ID) and we
@@ -57,12 +66,19 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
       else if (e.type === 'renamed') send(sseEvent('renamed', JSON.stringify(e.user)));
     });
 
+    // @mentions of this person, from any room: bell count + the new item.
+    const offUser = onUser(viewer.id, async (e) => {
+      const [n] = await getNotifications([e.notificationId]);
+      if (n) send(sseEvent('mention', JSON.stringify({ unread: e.unread, html: renderNotification(n), roomId: n.roomId })));
+    });
+
     // Subscribed first, so this person sees their own "joined" message.
     connectionOpened(room.id, viewer, freshPage).catch((err) => console.error('[presence] join failed', err));
 
     return () => {
       offRoom();
       offGlobal();
+      offUser();
       connectionClosed(room.id, viewer.id);
     };
   }, replay);

@@ -3,8 +3,9 @@ import App from '../../layouts/App.astro';
 import Sidebar from '../../components/Sidebar.astro';
 import { listRooms } from '../../lib/rooms';
 import { counts } from '../../lib/presence';
+import { countUnread } from '../../lib/notifications';
 
-const rooms = await listRooms();
+const [rooms, unread] = await Promise.all([listRooms(), countUnread(Astro.locals.user.id)]);
 const error = Astro.url.searchParams.get('error');
 
 // Where the live connection resumes from: render time, minus a little for clock skew
@@ -20,7 +21,7 @@ const renderedAt = Date.now() - 2000;
     hx-ext="sse"
     sse-connect="/api/rooms/stream"
   >
-    <Sidebar rooms={rooms} user={Astro.locals.user} error={error} counts={counts()} standalone />
+    <Sidebar rooms={rooms} user={Astro.locals.user} error={error} counts={counts()} unread={unread} standalone />
   </div>
 </App>
 

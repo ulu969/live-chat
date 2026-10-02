@@ -3,7 +3,7 @@ import { getRoom } from '../../../../lib/rooms';
 import { createMessage, MAX_MESSAGE_LENGTH } from '../../../../lib/messages';
 import { emitToRoom } from '../../../../lib/bus';
 import { clearTyping } from '../../../../lib/typing';
-import { typingChanged } from '../../../../lib/live';
+import { notifyMentions, typingChanged } from '../../../../lib/live';
 
 export const POST: APIRoute = async ({ params, request, locals }) => {
   const room = await getRoom(params.id!);
@@ -23,5 +23,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
   emitToRoom(room.id, { type: 'message', message });
   // Sending ends "is typing…" right away instead of waiting for the 2 s expiry.
   clearTyping(room.id, id, () => typingChanged(room.id));
+  // @mentions: saved notifications + a live ping to each person mentioned.
+  await notifyMentions(message).catch((err) => console.error('[mentions] notify failed', err));
   return new Response(null, { status: 204 });
 };

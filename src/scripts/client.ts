@@ -117,6 +117,19 @@ document.addEventListener('htmx:sseOpen', (e) => {
       el.setAttribute('aria-label', `${n} online`);
     });
   });
+  // You were @mentioned (in any room): update the bell, add the item, play the chime.
+  source.addEventListener('mention', (ev) => {
+    const { unread, html } = JSON.parse((ev as MessageEvent).data) as { unread: number; html: string };
+    const bell = Alpine.store('bell') as typeof bellStore;
+    bell.unread = unread;
+    const list = document.getElementById('bell-list');
+    if (bell.loaded && list) {
+      list.querySelector('li:not([data-notification])')?.remove(); // "No mentions yet"
+      list.insertAdjacentHTML('afterbegin', html);
+      localizeTimes(list);
+    }
+    sounds.mention();
+  });
   // Someone changed their nickname: update it everywhere it's already on screen.
   source.addEventListener('renamed', (ev) => {
     const { id, nickname } = JSON.parse((ev as MessageEvent).data) as { id: string; nickname: string };
@@ -139,6 +152,107 @@ function initials(name: string) {
     .join('');
 }
 
+// ---- Sounds ----------------------------------------------------------------------
+// Synthesized with Web Audio, so there are no sound files to load. A soft blip for new
+// messages, a brighter two-note chime when you're @mentioned. Mute is remembered per browser.
+let audio: AudioContext | null = null;
+const unlockAudio = () => {
+  audio ??= new AudioContext();
+  if (audio.state === 'suspended') audio.resume().catch(() => {});
+};
+// Browsers only allow sound after the person has interacted with the page.
+['pointerdown', 'keydown'].forEach((t) => window.addEventListener(t, unlockAudio, { capture: true }));
+
+function tone(freq: number, start: number, dur: number, gain: number) {
+  if (!audio || audio.state !== 'running') return;
+  const t = audio.currentTime + start;
+  const osc = audio.createOscillator();
+  const g = audio.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.02);
+}
+
+const readSoundPref = () => {
+  try {
+    return localStorage.getItem('sound') !== 'off';
+  } catch {
+    return true;
+  }
+};
+const soundStore = {
+  on: readSoundPref(),
+  toggle(this: { on: boolean }) {
+    this.on = !this.on;
+    try {
+      localStorage.setItem('sound', this.on ? 'on' : 'off');
+    } catch {}
+    if (this.on) {
+      unlockAudio();
+      tone(660, 0, 0.12, 0.05); // a little confirmation blip
+    }
+  },
+};
+Alpine.store('sound', soundStore);
+
+let lastSound = 0;
+let pendingMessageSound: ReturnType<typeof setTimeout> | undefined;
+export const sounds = {
+  /** New message from someone else. Waits a moment in case it's a mention (which gets the chime). */
+  message() {
+    if (!soundStore.on || Date.now() - lastSound < 1200) return;
+    clearTimeout(pendingMessageSound);
+    pendingMessageSound = setTimeout(() => {
+      lastSound = Date.now();
+      tone(520, 0, 0.14, 0.035);
+    }, 250);
+  },
+  mention() {
+    clearTimeout(pendingMessageSound);
+    if (!soundStore.on) return;
+    lastSound = Date.now();
+    tone(784, 0, 0.18, 0.07);
+    tone(1175, 0.12, 0.3, 0.06);
+  },
+};
+
+// New chat message from someone else in this room (duplicates were already dropped before
+// the swap, and system lines like "joined" stay silent).
+document.addEventListener('htmx:sseMessage', (e) => {
+  const evt = (e as CustomEvent).detail as MessageEvent;
+  if (evt.type !== 'message' || !/class="msg /.test(evt.data)) return;
+  const me = document.getElementById('live')?.dataset.me;
+  if (me && evt.data.includes(`data-user="${me}"`)) return;
+  sounds.message();
+});
+
+// ---- Notification bell -------------------------------------------------------------
+const bellStore = {
+  unread: 0,
+  loaded: false,
+  async load(this: { loaded: boolean }) {
+    const list = document.getElementById('bell-list');
+    if (!list) return;
+    const res = await fetch('/api/notifications', { headers: { 'HX-Request': 'true' } });
+    if (!res.ok) return;
+    list.innerHTML = await res.text();
+    localizeTimes(list);
+    this.loaded = true;
+  },
+  async markAllRead(this: { unread: number }) {
+    const res = await fetch('/api/notifications/read', { method: 'POST' });
+    if (!res.ok) return;
+    this.unread = 0;
+    document.querySelectorAll('#bell-list .notif-unread').forEach((el) => el.classList.remove('notif-unread'));
+  },
+};
+Alpine.store('bell', bellStore);
+
 // ---- Composer ----------------------------------------------------------------
 // Clears the box the instant you send so you can keep typing, and posts messages
 // strictly in order. The message comes back to every window (yours too) over SSE.
@@ -146,6 +260,68 @@ const TYPING_EVERY_MS = 1_500; // server expires typing after 2 s, so ping a bit
 
 Alpine.data('composer', () => ({
   error: '',
+  // @mention autocomplete state
+  mentionOpen: false,
+  mentionItems: [] as string[],
+  mentionIndex: 0,
+  mentionStart: -1,
+  /** Who can be mentioned: people online in this room (from the online list) + "everyone". */
+  candidates(): string[] {
+    const me = document.getElementById('live')?.dataset.me;
+    const people = [...document.querySelectorAll<HTMLElement>('#online-list li[data-nickname]')]
+      .filter((li) => li.dataset.userId !== me)
+      .map((li) => li.dataset.nickname!);
+    return [...people, 'everyone'];
+  },
+  /** Open, filter or close the dropdown based on the "@word" just before the caret. */
+  updateMention() {
+    const el = this.input();
+    const before = el.value.slice(0, el.selectionStart ?? el.value.length);
+    const at = before.lastIndexOf('@');
+    const query = at >= 0 ? before.slice(at + 1) : '';
+    const valid = at >= 0 && (at === 0 || /\s/.test(before[at - 1]!)) && !/\n/.test(query) && query.length <= 24;
+    if (!valid) return this.closeMention();
+    const q = query.toLowerCase();
+    const items = this.candidates().filter((n) => n.toLowerCase().startsWith(q)).slice(0, 8);
+    if (!items.length || (items.length === 1 && items[0]!.toLowerCase() === q)) return this.closeMention();
+    this.mentionItems = items;
+    this.mentionStart = at;
+    if (!this.mentionOpen || this.mentionIndex >= items.length) this.mentionIndex = 0;
+    this.mentionOpen = true;
+  },
+  closeMention() {
+    this.mentionOpen = false;
+    this.mentionItems = [];
+    this.mentionStart = -1;
+  },
+  pickMention(name: string) {
+    const el = this.input();
+    const caret = el.selectionStart ?? el.value.length;
+    const insert = `@${name} `;
+    el.value = el.value.slice(0, this.mentionStart) + insert + el.value.slice(caret);
+    const pos = this.mentionStart + insert.length;
+    el.setSelectionRange(pos, pos);
+    el.focus();
+    this.closeMention();
+    this.grow();
+  },
+  /** Keys in the message box: the dropdown takes arrows/Tab/Enter/Esc while it's open. */
+  onKey(e: KeyboardEvent) {
+    if (this.mentionOpen) {
+      const n = this.mentionItems.length;
+      if (e.key === 'ArrowDown') return e.preventDefault(), (this.mentionIndex = (this.mentionIndex + 1) % n);
+      if (e.key === 'ArrowUp') return e.preventDefault(), (this.mentionIndex = (this.mentionIndex - 1 + n) % n);
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        return this.pickMention(this.mentionItems[this.mentionIndex]!);
+      }
+      if (e.key === 'Escape') return e.preventDefault(), this.closeMention();
+    }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      this.send();
+    }
+  },
   queue: Promise.resolve() as Promise<unknown>,
   lastTyping: 0,
   /** Tell the room we're typing, at most every 1.5 s while keys are pressed. */
@@ -172,6 +348,7 @@ Alpine.data('composer', () => ({
     if (!content) return;
     const url = (el.form as HTMLFormElement).action;
     el.value = '';
+    this.closeMention();
     this.grow();
     this.error = '';
     this.lastTyping = 0; // the server clears our typing state when the message lands

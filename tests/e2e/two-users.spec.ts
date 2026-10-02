@@ -164,6 +164,69 @@ test('rename: everyone sees the new name, and a taken name is refused', async ()
   await expect(alice.getByText(`${NEW} changed their name to ${BOB}`)).toBeVisible();
 });
 
+test('@mentions: autocomplete, highlight, live bell count, and the bell list', async () => {
+  // Bob starts typing a mention: the dropdown offers Alice (online) and "everyone".
+  const box = bob.locator('#message-input');
+  await box.click();
+  await box.pressSequentially(`hey @${ALICE.slice(0, 4)}`);
+  const list = bob.locator('#mention-list');
+  await expect(list).toBeVisible();
+  await expect(list.getByRole('option')).toHaveText([new RegExp(ALICE)]);
+  await box.press('Enter'); // Enter picks from the dropdown instead of sending
+  await expect(box).toHaveValue(`hey @${ALICE} `);
+  await box.pressSequentially(`lunch? ${tag}`);
+  await box.press('Enter');
+
+  // Alice sees it highlighted as "for her", and her bell goes to 1 live.
+  const msg = message(alice, `lunch? ${tag}`);
+  await expect(msg).toHaveClass(/msg-for-me/);
+  await expect(msg.locator('.mention-me')).toHaveText(`@${ALICE}`);
+  await expect(alice.locator('#bell-count')).toHaveText('1');
+  // Bob's own copy shows the mention but isn't "for him".
+  await expect(message(bob, `lunch? ${tag}`)).not.toHaveClass(/msg-for-me/);
+  await expect(bob.locator('#bell-count')).toBeHidden();
+
+  // Bell list: the mention, from Bob, in #Lobby.
+  await alice.getByRole('button', { name: /Mentions/ }).click();
+  const item = alice.locator('#bell-list [data-notification]').first();
+  await expect(item).toContainText(`${BOB} mentioned you in #Lobby`);
+  await expect(item).toHaveClass(/notif-unread/);
+
+  // @everyone: shown as @EVERYONE, and reaches Alice live while her list is open.
+  await box.click();
+  await box.pressSequentially('@ev');
+  await expect(list.getByRole('option')).toHaveText([/everyone/]);
+  await box.press('Tab');
+  await box.pressSequentially(`meeting in 5 ${tag}`);
+  await box.press('Enter');
+  await expect(message(alice, `meeting in 5 ${tag}`).locator('.mention-everyone')).toHaveText('@EVERYONE');
+  await expect(alice.locator('#bell-count')).toHaveText('2');
+  await expect(alice.locator('#bell-list [data-notification]')).toHaveCount(2);
+
+  // Mark all read clears the badge and survives a reload.
+  await alice.getByRole('button', { name: 'Mark all read' }).click();
+  await expect(alice.locator('#bell-count')).toBeHidden();
+  await expect(alice.locator('#bell-list .notif-unread')).toHaveCount(0);
+  await alice.reload();
+  await expect(alice.locator('#bell-count')).toBeHidden();
+
+  // Opening a mention from the bell goes to that message and makes it glow.
+  await alice.getByRole('button', { name: /Mentions/ }).click();
+  await alice.locator('#bell-list a', { hasText: `lunch? ${tag}` }).click();
+  await expect(message(alice, `lunch? ${tag}`)).toHaveClass(/msg-flash/);
+});
+
+test('sound toggle is remembered in this browser', async () => {
+  const toggle = alice.locator('#sound-toggle');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await alice.reload();
+  await expect(alice.locator('#sound-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await alice.locator('#sound-toggle').click();
+  await expect(alice.locator('#sound-toggle')).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('catch-up: messages sent while a window was disconnected arrive once it reconnects', async () => {
   // Cut Bob off: block his live connection, then drop everyone's current connection.
   const stream = '**/api/rooms/*/stream*';

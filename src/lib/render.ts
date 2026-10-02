@@ -4,6 +4,8 @@
  * is decided on the server for each connection.
  */
 import { escapeHtml, initials } from './html';
+import { renderContent } from './mentions';
+import type { NotificationView } from './notifications';
 import type { ChatMessage } from './messages';
 
 const timeTag = (d: Date) => {
@@ -37,10 +39,13 @@ export function renderMessage(m: ChatMessage, viewerId: string, opts: { cont?: b
 
   const own = m.user.id === viewerId;
   const name = escapeHtml(m.user.nickname);
+  const body = renderContent(m.content, viewerId);
+  const forMe = body.mentionsViewer && !own; // someone else mentioned this viewer
+  const tone = forMe ? 'msg-for-me' : own ? 'bg-own/60 hover:bg-own' : 'hover:bg-hover';
   // A continuation (`msg-cont`) hides the avatar and header via CSS and shows the time in
   // the gutter on hover. The class is toggled client-side too, so both parts are always rendered.
   return `<li id="msg-${m.id}" data-ts="${ts}" data-user="${m.user.id}"
-    class="msg group flex gap-3 px-4 py-1.5 ${opts.cont ? 'msg-cont' : ''} ${own ? 'bg-own/60 hover:bg-own' : 'hover:bg-hover'}">
+    class="msg group flex gap-3 px-4 py-1.5 ${opts.cont ? 'msg-cont' : ''} ${tone}">
     <span aria-hidden="true"
       class="msg-avatar mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg text-sm font-semibold text-white"
       style="background:${escapeHtml(m.user.color)}">${escapeHtml(initials(m.user.nickname))}</span>
@@ -51,7 +56,7 @@ export function renderMessage(m: ChatMessage, viewerId: string, opts: { cont?: b
         ${own ? '<span class="text-[11px] text-ink-soft">you</span>' : ''}
         <span class="text-xs text-ink-soft">${timeTag(m.createdAt)}</span>
       </div>
-      <p class="whitespace-pre-wrap break-words leading-snug">${escapeHtml(m.content)}</p>
+      <p class="whitespace-pre-wrap break-words leading-snug">${body.html}</p>
     </div>
   </li>`;
 }
@@ -191,4 +196,26 @@ export function renderTyping(typists: { id: string; nickname: string }[], viewer
           ? `${names[0]}, ${names[1]} and ${names[2]} are`
           : 'Several people are';
   return `<span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span> ${who} typing…`;
+}
+
+// ---- Notifications (the bell) ---------------------------------------------------------
+
+export function renderNotification(n: NotificationView): string {
+  const href = `/rooms/${encodeURIComponent(n.roomId)}#msg-${encodeURIComponent(n.messageId)}`;
+  return `<li data-notification="${escapeHtml(n.id)}" class="${n.read ? '' : 'notif-unread'}">
+    <a href="${href}" class="flex gap-2.5 px-3 py-2 hover:bg-hover">
+      <span aria-hidden="true" class="notif-dot mt-1.5 size-2 shrink-0 rounded-full"></span>
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm"><strong class="font-semibold">${escapeHtml(n.fromNickname)}</strong>
+          mentioned you in <span class="font-medium">#${escapeHtml(n.roomName)}</span></span>
+        <span class="block truncate text-sm text-ink-soft">${escapeHtml(n.preview)}</span>
+        <span class="block text-[11px] text-ink-soft">${timeTag(n.createdAt)}</span>
+      </span>
+    </a>
+  </li>`;
+}
+
+export function renderNotificationList(list: NotificationView[]): string {
+  if (!list.length) return '<li class="px-3 py-6 text-center text-sm text-ink-soft">No mentions yet. When someone @mentions you, it shows up here.</li>';
+  return list.map(renderNotification).join('');
 }

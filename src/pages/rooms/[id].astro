@@ -2,6 +2,8 @@
 import { nanoid } from 'nanoid';
 import App from '../../layouts/App.astro';
 import Sidebar from '../../components/Sidebar.astro';
+import Bell from '../../components/Bell.astro';
+import { countUnread } from '../../lib/notifications';
 import { getRoom, listRooms } from '../../lib/rooms';
 import { listMessages } from '../../lib/messages';
 import { renderHistoryPage, renderOnlineCount, renderTyping, renderUserList } from '../../lib/render';
@@ -12,7 +14,7 @@ const user = Astro.locals.user;
 const room = await getRoom(Astro.params.id!);
 if (!room) return Astro.redirect('/rooms/lobby');
 
-const [rooms, history] = await Promise.all([listRooms(), listMessages(room.id)]);
+const [rooms, history, unread] = await Promise.all([listRooms(), listMessages(room.id), countUnread(user.id)]);
 
 // Live state at render time. This person joins when their live connection opens,
 // which immediately pushes fresh presence to everyone (including them).
@@ -49,7 +51,7 @@ const pageId = nanoid(12);
     <Sidebar rooms={rooms} currentId={room.id} user={user} counts={roomCounts} />
 
     <main id="chat" class="flex min-w-0 flex-1 flex-col bg-panel">
-      <header class="flex h-14 shrink-0 items-center gap-3 border-b border-line px-3 md:px-4">
+      <header class="flex h-14 shrink-0 items-center gap-1 border-b border-line px-3 md:gap-2 md:px-4">
         <a href="/rooms" class="-ml-1 rounded-md p-2 text-ink-soft hover:bg-hover md:hidden" aria-label="Back to rooms">
           <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"
             ><path d="M15 18l-6-6 6-6"></path></svg
@@ -61,6 +63,28 @@ const pageId = nanoid(12);
           </h1>
           {room.description && <p class="truncate text-xs text-ink-soft">{room.description}</p>}
         </div>
+
+        <!-- Sound on/off (remembered in this browser) -->
+        <button
+          type="button"
+          x-data
+          @click="$store.sound.toggle()"
+          :aria-pressed="$store.sound.on"
+          :aria-label="$store.sound.on ? 'Mute sounds' : 'Turn sounds on'"
+          :title="$store.sound.on ? 'Sounds on' : 'Sounds off'"
+          aria-label="Sounds"
+          id="sound-toggle"
+          class="rounded-md p-2 text-ink-soft hover:bg-hover hover:text-ink"
+        >
+          <svg x-show="$store.sound.on" viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
+            ><path d="M11 5 6 9H2v6h4l5 4z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg
+          >
+          <svg x-show="!$store.sound.on" x-cloak viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"
+            ><path d="M11 5 6 9H2v6h4l5 4z"></path><path d="m22 9-6 6"></path><path d="m16 9 6 6"></path></svg
+          >
+        </button>
+
+        <Bell unread={unread} />
 
         <!-- Who's online: count in the header, list in a popover -->
         <div class="relative" x-data="{ open: false }" @keydown.escape.window="open = false">
@@ -119,12 +143,36 @@ const pageId = nanoid(12);
 
       <form
         id="composer"
-        class="shrink-0 px-3 pt-0.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4"
+        class="relative shrink-0 px-3 pt-0.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4"
         action={`/api/rooms/${room.id}/messages`}
         method="post"
         x-data="composer"
         @submit.prevent="send()"
       >
+        <!-- @mention autocomplete: people online here + everyone -->
+        <ul
+          id="mention-list"
+          role="listbox"
+          x-show="mentionOpen"
+          x-cloak
+          class="absolute bottom-full left-3 z-20 mb-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-line bg-panel py-1 shadow-lg md:left-4"
+        >
+          <template x-for="(name, i) in mentionItems" :key="name">
+            <li
+              role="option"
+              :aria-selected="i === mentionIndex"
+              @mousedown.prevent="pickMention(name)"
+              @mouseenter="mentionIndex = i"
+              :class="i === mentionIndex ? 'bg-accent text-accent-ink' : 'text-ink'"
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm"
+            >
+              <span class="opacity-60">@</span>
+              <span class="truncate" x-text="name === 'everyone' ? 'everyone' : name"></span>
+              <span x-show="name === 'everyone'" class="ml-auto text-[11px] opacity-70">notify everyone here</span>
+            </li>
+          </template>
+        </ul>
+
         <div
           class="flex items-end gap-2 rounded-xl border border-line bg-bg px-3 py-2 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/25"
         >
@@ -139,9 +187,15 @@ const pageId = nanoid(12);
             autocomplete="off"
             placeholder={`Message #${room.name}`}
             class="max-h-40 min-h-6 flex-1 resize-none bg-transparent py-1 leading-6 outline-none focus-visible:outline-none placeholder:text-ink-soft"
-            @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); send() }"
+            @keydown="onKey($event)"
+            @click="updateMention()"
+            @blur="setTimeout(() => closeMention(), 150)"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="mention-list"
+            :aria-expanded="mentionOpen"
             x-init="matchMedia('(min-width: 768px)').matches && $el.focus()"
-            @input="grow(); typing()"></textarea>
+            @input="grow(); typing(); updateMention()"></textarea>
           <button
             class="grid size-9 shrink-0 place-items-center rounded-lg bg-accent text-accent-ink hover:brightness-110 disabled:opacity-50"
             aria-label="Send message"
@@ -152,7 +206,7 @@ const pageId = nanoid(12);
           </button>
         </div>
         <p x-show="error" x-text="error" x-cloak class="mt-1 text-sm text-danger" role="alert"></p>
-        <p class="mt-1 hidden text-[11px] text-ink-soft md:block">Enter to send · Shift+Enter for a new line</p>
+        <p class="mt-1 hidden text-[11px] text-ink-soft md:block">Enter to send · Shift+Enter for a new line · @ to mention</p>
       </form>
     </main>
   </div>
@@ -184,6 +238,19 @@ const pageId = nanoid(12);
   }
 
   toBottom();
+
+  // Arrived from the bell (…#msg-<id>): show that message and make it glow briefly.
+  // Same room = only the hash changes (no reload), so handle that too.
+  function showLinkedMessage() {
+    const target = location.hash.startsWith('#msg-') ? document.getElementById(location.hash.slice(1)) : null;
+    if (!target) return;
+    target.scrollIntoView({ block: 'center' });
+    target.classList.remove('msg-flash');
+    void target.offsetWidth; // restart the animation
+    target.classList.add('msg-flash');
+  }
+  showLinkedMessage();
+  window.addEventListener('hashchange', showLinkedMessage);
 
   let stickToBottom = true;
   live.addEventListener('htmx:sseBeforeMessage', (e) => {

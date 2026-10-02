@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db, schema } from '../db/client';
 import type { User } from '../db/schema';
+import { rememberName } from './mentions';
 
 export const COOKIE = 'chat_user_id';
 export const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -44,6 +45,7 @@ export async function createUser(nickname: string): Promise<User> {
     .insert(schema.users)
     .values({ id: nanoid(), nickname, color: randomColor() })
     .returning();
+  rememberName(user);
   return user;
 }
 
@@ -52,7 +54,9 @@ export async function renameUser(id: string, nickname: string): Promise<User | n
   const taken = await findByNickname(nickname);
   if (taken && taken.id !== id) return null;
   try {
+    const before = await getUser(id);
     const [user] = await db.update(schema.users).set({ nickname }).where(eq(schema.users.id, id)).returning();
+    if (user) rememberName(user, before?.nickname);
     return user ?? null;
   } catch {
     return null; // unique index race

@@ -76,6 +76,10 @@ who's typing, open connections) lives in server memory and expires on its own:
 - `lib/typing.ts` — who's typing. Each ping lasts 2 s; sending a message clears it at once.
 - `lib/bus.ts` — in-memory event bus. `room:<id>` events reach only that room's connections.
 
+- `lib/mentions.ts` — @mentions match *known* nicknames (spaces allowed, longest wins, case-insensitive);
+  `@everyone` reaches everyone in the room right now and shows as `@EVERYONE`. Each mention saves a
+  notification and pings that person live (`user:<id>` on the bus) for the bell and the chime.
+
 Because live state is in memory, the app runs as a single server process (one Railway instance).
 
 ## Tests

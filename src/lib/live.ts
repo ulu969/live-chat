@@ -2,7 +2,10 @@
  * Glue between live state (presence, typing) and the bus. Join/leave also write
  * system messages to the database so they show up in history.
  */
-import { emitGlobal, emitToRoom } from './bus';
+import { emitGlobal, emitToRoom, emitToUser } from './bus';
+import { findMentions } from './mentions';
+import { countUnread, createMentionNotifications } from './notifications';
+import type { ChatMessage } from './messages';
 import type { User } from '../db/schema';
 import * as presence from './presence';
 import { createMessage, lastMembershipEvent } from './messages';
@@ -72,6 +75,20 @@ export async function announceRename(user: User, oldName: string, currentRoom: s
     announcePresence(roomId);
   }
   emitGlobal({ type: 'renamed', user: { id: user.id, nickname: user.nickname } });
+}
+
+/**
+ * After a chat message is saved: notify everyone it mentions. "@everyone" means everyone
+ * in the room right now (online, or away but not yet announced as left).
+ */
+export async function notifyMentions(message: ChatMessage) {
+  const { userIds, everyone } = findMentions(message.content);
+  const recipients = new Set(userIds);
+  if (everyone) for (const p of presence.peopleIn(message.roomId)) recipients.add(p.id);
+  const created = await createMentionNotifications(message, [...recipients]);
+  for (const { userId, id } of created) {
+    emitToUser(userId, { type: 'mention', notificationId: id, unread: await countUnread(userId) });
+  }
 }
 
 export const typingChanged = (roomId: string) => emitToRoom(roomId, { type: 'typing' });
