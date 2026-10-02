@@ -19,7 +19,19 @@ if (!url) {
 }
 const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
 const sql = postgres(url, { max: 1, onnotice: () => {}, connect_timeout: 10, ssl: local ? false : 'prefer' });
-await waitForDb(sql, { attempts: 3 });
+try {
+  await waitForDb(sql, { attempts: 3 });
+} catch (err) {
+  if (err.code === 'ENOTFOUND' && /\.railway\.internal[:/]/.test(url)) {
+    console.error(
+      "That's Railway's private database address, which only works inside Railway.\n" +
+        'Run this script inside the app instead: railway ssh, then node scripts/cleanup-presence-spam.mjs\n' +
+        '(or use DATABASE_PUBLIC_URL if your plan allows public access).',
+    );
+    process.exit(1);
+  }
+  throw err;
+}
 
 const rows = await sql`
   select m.id, m.room_id, m.user_id, m.type, m.created_at, u.nickname

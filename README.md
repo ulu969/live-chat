@@ -128,12 +128,20 @@ Railway's proxy.
 person with no chat in between, keeping the first line (and the last, if it differs). It previews by
 default; add `--apply` to delete, in one transaction. Chat messages are never touched.
 
-Against Railway: copy `DATABASE_PUBLIC_URL` from **Postgres → Variables**, then
+Against Railway, run it inside the app container, where the private database address works
+(no public database access needed). With the Railway CLI (`brew install railway`):
 
 ```bash
-DATABASE_URL='<DATABASE_PUBLIC_URL>' node scripts/cleanup-presence-spam.mjs           # preview
-DATABASE_URL='<DATABASE_PUBLIC_URL>' node scripts/cleanup-presence-spam.mjs --apply   # delete
+railway login
+railway link                # pick the project and the live-chat service
+railway ssh                 # opens a shell in the running app
+node scripts/cleanup-presence-spam.mjs           # preview
+node scripts/cleanup-presence-spam.mjs --apply   # delete
+exit
 ```
+
+(If your plan allows public access on Postgres, you can instead run it from your machine with
+`DATABASE_URL='<DATABASE_PUBLIC_URL>'`.)
 
 ## Troubleshooting
 

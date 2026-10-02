@@ -1,0 +1,6 @@
+remove this
+DATABASE_URL='postgresql://postgres:dPBVcZHWIqVcJoLbEZqjpfnmHabvlEfR@postgres.railway.internal:5432/railway' node scripts/cleanup-presence-spam.mjs
+
+postgresql://postgres:dPBVcZHWIqVcJoLbEZqjpfnmHabvlEfR@postgres.railway.internal:5432/railway
+
+DATABASE_URL='postgresql://postgres:dPBVcZHWIqVcJoLbEZqjpfnmHabvlEfR@postgres.railway.internal:5432/railway'
