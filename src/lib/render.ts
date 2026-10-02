@@ -41,8 +41,49 @@ export function renderMessage(m: ChatMessage, viewerId: string): string {
   </li>`;
 }
 
-export const renderMessages = (list: ChatMessage[], viewerId: string) =>
-  list.map((m) => renderMessage(m, viewerId)).join('');
+const isMembership = (m: ChatMessage) => (m.type === 'join' || m.type === 'leave') && !!m.user;
+
+/** One line standing in for a run of back-to-back joined/left messages from one person. */
+function renderMembershipRun(run: ChatMessage[]): string {
+  const first = run[0]!;
+  const last = run[run.length - 1]!;
+  const name = escapeHtml(last.user!.nickname);
+  const leaves = run.filter((m) => m.type === 'leave').length;
+  const text =
+    last.type === 'join'
+      ? `${name} joined and left ${leaves} time${leaves === 1 ? '' : 's'}, then joined again`
+      : `${name} joined and left ${leaves} time${leaves === 1 ? '' : 's'}`;
+  // Keeps the last message's id/timestamp so de-duplication and catch-up still work.
+  return `<li id="msg-${last.id}" data-ts="${last.createdAt.getTime()}" data-kind="system" data-collapsed="${run.length}"
+    class="msg-system flex items-center gap-3 px-4 py-1 text-xs text-ink-soft">
+    <span class="h-px flex-1 bg-line"></span>
+    <span>${text} · ${timeTag(first.createdAt)} – ${timeTag(last.createdAt)}</span>
+    <span class="h-px flex-1 bg-line"></span>
+  </li>`;
+}
+
+/**
+ * Renders a list oldest-first. Three or more consecutive joined/left lines from the same
+ * person (e.g. a laptop waking and sleeping overnight) collapse into one summary line.
+ */
+export function renderMessages(list: ChatMessage[], viewerId: string): string {
+  let html = '';
+  for (let i = 0; i < list.length; ) {
+    const m = list[i]!;
+    if (isMembership(m)) {
+      let j = i + 1;
+      while (j < list.length && isMembership(list[j]!) && list[j]!.user!.id === m.user!.id) j++;
+      if (j - i >= 3) {
+        html += renderMembershipRun(list.slice(i, j));
+        i = j;
+        continue;
+      }
+    }
+    html += renderMessage(m, viewerId);
+    i++;
+  }
+  return html;
+}
 
 /** "Load earlier" row at the top of the list. Replaced by the older page when triggered. */
 export function renderLoadEarlier(roomId: string, oldest: ChatMessage): string {

@@ -31,6 +31,7 @@ npm run dev                 # http://localhost:4321
 | `DB_PORT`      | no       | `5433`                                        | Host port for the Docker Postgres       |
 | `PRESENCE_GRACE_MS` | no  | `60000`                                       | Wait before posting "left" (lower it to test) |
 | `SSE_HEARTBEAT_MS`  | no  | `30000`                                       | Interval of the keep-alive ping           |
+| `PRESENCE_AWAY_MS`  | no  | `900000`                                      | "Left" fallback when a page vanishes silently |
 
 ## Scripts
 
@@ -43,6 +44,7 @@ npm run dev                 # http://localhost:4321
 | `npm run db:generate`| Generate a new migration after editing `src/db/schema.ts` |
 | `npm run db:setup`   | Apply migrations and seed (safe to run repeatedly)        |
 | `npm run db:check`   | Diagnose the database connection and setup               |
+| `npm run db:cleanup-presence` | Preview removing repeated joined/left lines (`-- --apply` to delete) |
 | `npm run test:e2e`   | Build, then run the two-browser end-to-end tests          |
 | `npm run test:e2e:ui`| Same, in Playwright's UI so you can watch each step       |
 
@@ -62,8 +64,15 @@ drizzle/              generated SQL migrations
 Saved state (users, rooms, messages, notifications) lives in Postgres. Live state (who's online,
 who's typing, open connections) lives in server memory and expires on its own:
 
-- `lib/presence.ts` — who's in each room. Counts tabs per person; "left" is posted only after a
-  60 s grace period, so a refresh or brief network drop doesn't spam the room.
+- `lib/presence.ts` — who's in each room, and when to announce it. Being **online** (count and
+  list) follows the live connection, with a 60 s grace period. Announcing **"joined"/"left"** is
+  separate, so a laptop sleeping or Wi-Fi dropping doesn't fill the chat:
+  - "joined" — only on a real page load (each page render has an id; reconnects reuse it), and
+    only if their last line in that room isn't already "joined".
+  - "left" — when the page signals it's closing (`sendBeacon` on `pagehide`) and they don't come
+    back within the grace period (a refresh does); or right away on **Exit**; or, if the page
+    vanished without a signal, after 15 minutes away (`PRESENCE_AWAY_MS`).
+  - Three or more back-to-back joined/left lines from one person display as a single line.
 - `lib/typing.ts` — who's typing. Each ping lasts 2 s; sending a message clears it at once.
 - `lib/bus.ts` — in-memory event bus. `room:<id>` events reach only that room's connections.
 
@@ -112,6 +121,19 @@ One-time setup in the Railway dashboard:
 
 Open the public URL in two browsers to check messages, presence and typing update live through
 Railway's proxy.
+
+## Cleaning up repeated joined/left lines
+
+`scripts/cleanup-presence-spam.mjs` removes the middle of any run of 3+ joined/left lines by the same
+person with no chat in between, keeping the first line (and the last, if it differs). It previews by
+default; add `--apply` to delete, in one transaction. Chat messages are never touched.
+
+Against Railway: copy `DATABASE_PUBLIC_URL` from **Postgres → Variables**, then
+
+```bash
+DATABASE_URL='<DATABASE_PUBLIC_URL>' node scripts/cleanup-presence-spam.mjs           # preview
+DATABASE_URL='<DATABASE_PUBLIC_URL>' node scripts/cleanup-presence-spam.mjs --apply   # delete
+```
 
 ## Troubleshooting
 

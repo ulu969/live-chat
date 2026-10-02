@@ -4,7 +4,7 @@
  * and the SSE heartbeat.
  */
 import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { GRACE_MS, HEARTBEAT_MS, PORT, restartServer, startServer, stopServer } from './server';
+import { AWAY_MS, GRACE_MS, HEARTBEAT_MS, PORT, restartServer, startServer, stopServer } from './server';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -130,6 +130,60 @@ test('catch-up: messages sent while a window was disconnected arrive once it rec
   await expect(message(bob, `back live ${tag}`)).toBeVisible();
   const ids = await bob.locator('#messages li[id^="msg-"]').evaluateAll((els) => els.map((e) => e.id));
   expect(new Set(ids).size).toBe(ids.length);
+});
+
+test('sleep: a connection that drops and comes back posts no "left" or "joined"', async ({ browser }) => {
+  const { ctx, page: dave } = await joinAs(browser, `dave-${tag}`);
+  await expect(alice.getByText(`dave-${tag} joined`)).toBeVisible();
+  await expect(onlineCount(alice)).toContainText('3 online');
+
+  // Like a laptop dozing off: the connection drops with no "page closing" signal,
+  // and stays down longer than the grace period.
+  const stream = '**/api/rooms/*/stream*';
+  await dave.route(stream, (route) => route.abort('internetdisconnected'));
+  await dave.evaluate(() => {
+    const src = (document.getElementById('live') as any)['htmx-internal-data'].sseEventSource as EventSource;
+    src.close();
+    src.onerror?.(new Event('error')); // let the SSE extension start reconnecting, as after a real drop
+  });
+  await expect(onlineCount(alice)).toContainText('2 online', { timeout: GRACE_MS + 5_000 }); // shown offline…
+  await expect(alice.getByText(`dave-${tag} left`)).toHaveCount(0); // …but not announced
+
+  // Wakes up: the same page reconnects silently.
+  await dave.unroute(stream);
+  await expect(onlineCount(alice)).toContainText('3 online', { timeout: 20_000 });
+  await expect(alice.getByText(`dave-${tag} joined`)).toHaveCount(1);
+  await expect(alice.getByText(`dave-${tag} left`)).toHaveCount(0);
+  await ctx.close();
+});
+
+test('fallback: a page that vanishes without a close signal is announced as left after a while', async ({ browser }) => {
+  const { ctx, page: erin } = await joinAs(browser, `erin-${tag}`);
+  await expect(alice.getByText(`erin-${tag} joined`)).toBeVisible();
+  // No beacon (e.g. a phone killed the tab), then the page goes away.
+  await erin.evaluate(() => (navigator.sendBeacon = () => true));
+  const goneAt = Date.now();
+  await erin.goto('about:blank');
+  await expect(alice.getByText(`erin-${tag} left`)).toHaveCount(0, { timeout: 1_000 });
+  await alice.waitForTimeout(GRACE_MS + 1_000);
+  await expect(alice.getByText(`erin-${tag} left`)).toHaveCount(0); // past the grace period: still quiet
+  await expect(alice.getByText(`erin-${tag} left`)).toBeVisible({ timeout: AWAY_MS + 5_000 });
+  expect(Date.now() - goneAt).toBeGreaterThanOrEqual(AWAY_MS - 500);
+  // Coming back for real (a fresh page) announces "joined" again.
+  await erin.goto('/rooms/lobby');
+  await expect(alice.getByText(`erin-${tag} joined`)).toHaveCount(2);
+  await ctx.close();
+});
+
+test('Exit announces "left" right away', async ({ browser }) => {
+  const { page: finn } = await joinAs(browser, `finn-${tag}`);
+  await expect(alice.getByText(`finn-${tag} joined`)).toBeVisible();
+  const t = Date.now();
+  await finn.getByRole('button', { name: 'Exit' }).click();
+  await finn.waitForURL('**/join');
+  await expect(alice.getByText(`finn-${tag} left`)).toBeVisible({ timeout: 3_000 });
+  expect(Date.now() - t).toBeLessThan(GRACE_MS + 500);
+  await finn.context().close();
 });
 
 test('heartbeat: the stream sends a ping comment to keep proxies from closing it', async () => {

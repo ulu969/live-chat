@@ -1,4 +1,5 @@
 ---
+import { nanoid } from 'nanoid';
 import App from '../../layouts/App.astro';
 import Sidebar from '../../components/Sidebar.astro';
 import { getRoom, listRooms } from '../../lib/rooms';
@@ -29,6 +30,9 @@ const roomCounts = { ...counts(), [room.id]: people.length };
 // Where the live connection resumes from: render time, minus a little for clock skew
 // between this server and the database. Duplicates are dropped by the client.
 const renderedAt = Date.now() - 2000;
+// Identifies this page load to the live connection: its first connection is a real
+// visit ("joined"); reconnects after sleep or a network drop reuse it and stay silent.
+const pageId = nanoid(12);
 ---
 
 <App title={`#${room.name} · Live Chat`}>
@@ -39,7 +43,8 @@ const renderedAt = Date.now() - 2000;
     class="flex h-dvh overflow-hidden"
     data-me={user.id}
     hx-ext="sse"
-    sse-connect={`/api/rooms/${room.id}/stream`}
+    data-room={room.id}
+    sse-connect={`/api/rooms/${room.id}/stream?page=${pageId}`}
   >
     <Sidebar rooms={rooms} currentId={room.id} user={user} counts={roomCounts} />
 

@@ -17,7 +17,8 @@
     "check": "astro check",
     "db:check": "node --env-file-if-exists=.env scripts/db-check.mjs",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "db:cleanup-presence": "node --env-file-if-exists=.env scripts/cleanup-presence-spam.mjs"
   },
   "dependencies": {
     "@astrojs/node": "^10.1.4",

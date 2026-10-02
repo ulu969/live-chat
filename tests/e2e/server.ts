@@ -7,6 +7,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 export const PORT = Number(process.env.E2E_PORT ?? 4399);
 export const GRACE_MS = 2_000;
 export const HEARTBEAT_MS = 1_000;
+/** Stand-in for the 15-minute "left" fallback when a page vanishes without saying so. */
+export const AWAY_MS = 8_000;
 
 let proc: ChildProcess | null = null;
 
@@ -17,6 +19,7 @@ export async function startServer() {
       PORT: String(PORT),
       HOST: '127.0.0.1',
       PRESENCE_GRACE_MS: String(GRACE_MS),
+      PRESENCE_AWAY_MS: String(AWAY_MS),
       SSE_HEARTBEAT_MS: String(HEARTBEAT_MS),
     },
     stdio: ['ignore', 'pipe', 'pipe'],

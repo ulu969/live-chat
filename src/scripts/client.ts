@@ -21,10 +21,33 @@ function resumeFrom(): number {
   const lastMsg = Number(last?.dataset.ts ?? 0);
   return Math.max(rendered, lastMsg);
 }
+let currentSource: EventSource | null = null;
 (htmx as any).createEventSource = (url: string) => {
   const since = resumeFrom();
-  return new EventSource(since ? `${url}${url.includes('?') ? '&' : '?'}since=${since}` : url);
+  currentSource = new EventSource(since ? `${url}${url.includes('?') ? '&' : '?'}since=${since}` : url);
+  return currentSource;
 };
+
+// ---- Leaving vs. dozing off ----------------------------------------------------------
+// Tell the server when a room page is really closing (tab closed, navigating away,
+// refresh). Without this signal a dropped connection is treated as sleep or a network
+// blip, and "left" is only announced if the person stays away for a long while.
+window.addEventListener('pagehide', () => {
+  const room = document.getElementById('live')?.dataset.room;
+  if (room) navigator.sendBeacon(`/api/rooms/${encodeURIComponent(room)}/leave`);
+});
+// Restored from the back/forward cache: its live connection is gone, so load it fresh.
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted && document.getElementById('live')) location.reload();
+});
+// Waking up or coming back online: the browser retries a dropped connection every 2 s by
+// itself, but after a server error the SSE extension backs off for up to a minute. If the
+// connection has given up, reload (replay fills in anything missed).
+function reviveIfClosed() {
+  if (document.visibilityState === 'visible' && currentSource?.readyState === EventSource.CLOSED) location.reload();
+}
+document.addEventListener('visibilitychange', reviveIfClosed);
+window.addEventListener('online', reviveIfClosed);
 
 // ---- Connection status ---------------------------------------------------------
 // Show "Reconnecting…" if the live connection has been down for more than a moment.

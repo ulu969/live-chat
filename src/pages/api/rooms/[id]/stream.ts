@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { getRoom, listRoomsSince } from '../../../../lib/rooms';
 import { listMessagesSince } from '../../../../lib/messages';
 import { onGlobal, onRoom } from '../../../../lib/bus';
-import { online } from '../../../../lib/presence';
+import { isFreshPage, online } from '../../../../lib/presence';
 import { typists } from '../../../../lib/typing';
 import { connectionClosed, connectionOpened } from '../../../../lib/live';
 import { renderMessage, renderOnlineCount, renderRoomLink, renderTyping, renderUserList } from '../../../../lib/render';
@@ -26,6 +26,8 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
   const { id, nickname, color } = locals.user;
   const viewer = { id, nickname, color };
   const since = resumePoint(request);
+  // First connection from a newly rendered page = a real visit; later ones are reconnects.
+  const freshPage = isFreshPage(new URL(request.url).searchParams.get('page'));
 
   const replay = async (send: (chunk: string) => void) => {
     if (since) {
@@ -54,7 +56,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
     });
 
     // Subscribed first, so this person sees their own "joined" message.
-    connectionOpened(room.id, viewer).catch((err) => console.error('[presence] join failed', err));
+    connectionOpened(room.id, viewer, freshPage).catch((err) => console.error('[presence] join failed', err));
 
     return () => {
       offRoom();

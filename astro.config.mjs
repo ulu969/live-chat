@@ -17,6 +17,8 @@ export default defineConfig({
     schema: {
       DATABASE_URL: envField.string({ context: 'server', access: 'secret' }),
       PRESENCE_GRACE_MS: envField.number({ context: 'server', access: 'secret', default: 60_000 }),
+      // Without a "page closing" signal (sleep, network drop), wait this long before "left".
+      PRESENCE_AWAY_MS: envField.number({ context: 'server', access: 'secret', default: 15 * 60_000 }),
       SSE_HEARTBEAT_MS: envField.number({ context: 'server', access: 'secret', default: 30_000 }),
     },
   },
