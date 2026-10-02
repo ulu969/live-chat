@@ -5,8 +5,10 @@
     "buildCommand": "npm run build"
   },
   "deploy": {
-    "preDeployCommand": ["npm run db:setup"],
-    "startCommand": "npm start",
+    "preDeployCommand": [
+      "npm run db:setup"
+    ],
+    "startCommand": "npm run db:setup && npm start",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
